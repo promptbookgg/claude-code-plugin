@@ -2,7 +2,7 @@
 
 Build better. See your progress. Post the proof.
 
-Every Claude Code session becomes a shareable Build Card on [promptbook.gg](https://promptbook.gg) — verified stats, no self-reporting.
+Track prompts, tokens, and build time automatically. Every Claude Code session becomes shareable progress on [promptbook.gg](https://promptbook.gg) — verified stats, no self-reporting.
 
 ## Install
 
@@ -34,11 +34,11 @@ The plugin registers four Claude Code hooks:
 | **PostToolUse** | Counts lines changed, tracks file types |
 | **SessionEnd** | Finalizes stats, submits to promptbook.gg |
 
-After each session, you'll see a link to your Build Card. Customize the title, summary, and screenshot on the web — then share it.
+After each session, you'll see a link to your progress. Customize the title, summary, and screenshot on the web — then share it.
 
 ## Privacy
 
-Only aggregate stats leave your machine. The plugin also generates a short title and summary for each card by calling Claude Haiku through your own Claude credentials — this goes to Anthropic (same as any Claude Code usage), never to Promptbook.
+Only aggregate stats leave your machine. The plugin also generates a short title and summary by calling Claude Haiku through your own Claude credentials — this goes to Anthropic (same as any Claude Code usage), never to Promptbook.
 
 You can audit everything: the hooks are right here in this repo.
 
@@ -52,6 +52,6 @@ bash <(curl -sL promptbook.gg/setup.sh)
 
 ## Links
 
-- [promptbook.gg](https://promptbook.gg) — the product
-- [Discover feed](https://promptbook.gg) — see what others are building
-- [Setup guide](https://promptbook.gg/setup) — browser-based setup flow
+- [promptbook.gg](https://promptbook.gg)
+- [Discover](https://promptbook.gg) — see what others are building
+- [Setup](https://promptbook.gg/setup) — browser-based setup flow
