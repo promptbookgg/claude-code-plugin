@@ -90,6 +90,10 @@ if [ -f "$CONFIG_FILE" ]; then
       printf '%s\n' "## Promptbook — here is what was built recently on $PROJECT_NAME"
       printf '%s\n' ""
       echo "$CONTEXT" | tail -n +2
+
+      # Brief visible notification (stderr is shown in terminal, not injected as context)
+      SESSION_COUNT=$(echo "$CONTEXT" | grep -c '^### ' || true)
+      echo "[promptbook] ${SESSION_COUNT} recent session(s) loaded as context" >&2
     fi
   fi
 fi
