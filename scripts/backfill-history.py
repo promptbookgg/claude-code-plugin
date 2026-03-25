@@ -25,14 +25,18 @@ from collections import Counter
 from typing import Optional
 
 
-def find_jsonl_files(days: int, project_filter: Optional[str] = None) -> list:
-    """Find JSONL session files from the last N days."""
+def find_jsonl_files(days: int, project_filter: Optional[str] = None, before: Optional[str] = None) -> list:
+    """Find JSONL session files from the last N days, optionally before a cutoff date."""
     claude_dir = Path.home() / ".claude" / "projects"
     if not claude_dir.exists():
         print(f"No Claude Code projects found at {claude_dir}", file=sys.stderr)
         return []
 
-    cutoff = time.time() - (days * 86400)
+    after_cutoff = time.time() - (days * 86400)
+    before_cutoff = None
+    if before:
+        before_cutoff = datetime.fromisoformat(before.replace("Z", "+00:00")).timestamp()
+
     files = []
 
     for project_dir in claude_dir.iterdir():
@@ -40,15 +44,14 @@ def find_jsonl_files(days: int, project_filter: Optional[str] = None) -> list:
             continue
 
         if project_filter:
-            # Match if the project directory name contains the filter
             dir_name = project_dir.name
-            # Decode the encoded path: -Users-foo-Desktop-myproject → myproject
             decoded_project = dir_name.rsplit("-", 1)[-1] if "-" in dir_name else dir_name
             if project_filter.lower() not in dir_name.lower() and project_filter.lower() != decoded_project.lower():
                 continue
 
         for jsonl_file in project_dir.glob("*.jsonl"):
-            if jsonl_file.stat().st_mtime >= cutoff:
+            mtime = jsonl_file.stat().st_mtime
+            if mtime >= after_cutoff and (before_cutoff is None or mtime < before_cutoff):
                 files.append(jsonl_file)
 
     return sorted(files, key=lambda f: f.stat().st_mtime)
@@ -277,6 +280,7 @@ def main():
     parser.add_argument("--api-url", type=str, help="API URL (overrides config)")
     parser.add_argument("--api-key", type=str, help="API key (overrides config)")
     parser.add_argument("--project", type=str, help="Only backfill sessions from this project")
+    parser.add_argument("--before", type=str, help="Only include sessions before this ISO date (e.g. 2026-03-10)")
     args = parser.parse_args()
 
     needs_config = not args.dry_run and not args.json
@@ -302,7 +306,7 @@ def main():
     if not args.json:
         print(f"Scanning for sessions from the last {args.days} days...", file=sys.stderr)
 
-    jsonl_files = find_jsonl_files(args.days, args.project)
+    jsonl_files = find_jsonl_files(args.days, args.project, args.before)
 
     if not args.json:
         print(f"Found {len(jsonl_files)} session files", file=sys.stderr)
