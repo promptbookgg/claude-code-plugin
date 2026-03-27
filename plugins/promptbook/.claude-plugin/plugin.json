@@ -1,0 +1,9 @@
+{
+  "name": "promptbook",
+  "description": "Automatic build tracking for AI builders. Every Claude Code session becomes a shareable Build Card on promptbook.gg — verified stats, no self-reporting.",
+  "version": "1.0.0",
+  "author": {
+    "name": "Promptbook",
+    "email": "hello@promptbook.gg"
+  }
+}

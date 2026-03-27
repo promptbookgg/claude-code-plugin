@@ -10,7 +10,7 @@
   "plugins": [
     {
       "name": "promptbook",
-      "source": "./",
+      "source": "./plugins/promptbook",
       "description": "Track Claude Code sessions and generate shareable Build Cards on promptbook.gg",
       "version": "1.0.0"
     }
