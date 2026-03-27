@@ -110,8 +110,24 @@ def parse_session(jsonl_path: Path) -> Optional[dict]:
     if build_time_seconds < 5:
         return None  # Too short to be a real session
 
-    # Count prompts (type=user entries)
-    prompt_count = sum(1 for e in entries if e.get("type") == "user")
+    # Count prompts: only user entries with actual text content (real human prompts).
+    # Empty type=user entries are tool results, hook responses, etc. — not prompts.
+    def is_real_prompt(entry):
+        if entry.get("type") != "user":
+            return False
+        msg = entry.get("message", {})
+        content = msg.get("content") if isinstance(msg, dict) else None
+        if isinstance(content, str):
+            return len(content.strip()) > 0
+        if isinstance(content, list):
+            return any(
+                isinstance(b, dict) and b.get("type") == "text"
+                and isinstance(b.get("text"), str) and len(b["text"].strip()) > 0
+                for b in content
+            )
+        return False
+
+    prompt_count = sum(1 for e in entries if is_real_prompt(e))
 
     # Extract token usage from assistant messages
     total_input = 0
