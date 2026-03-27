@@ -11,7 +11,7 @@
     {
       "name": "promptbook",
       "source": "./",
-      "description": "Track Claude Code sessions and generate shareable Build Cards on promptbook.gg",
+      "description": "Track your Claude Code sessions automatically. See your prompts, tokens, and build time — share your builds on promptbook.gg.",
       "version": "1.0.0"
     }
   ]
