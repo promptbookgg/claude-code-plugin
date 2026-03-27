@@ -51,16 +51,25 @@ function log(message) {
 }
 
 /**
- * Read plugin version from plugin.json.
+ * Read plugin version from plugin.json (plugin installs).
+ * Falls back to hooks-hash file (bash/setup.sh installs).
  */
-function getPluginVersion() {
+function getHooksVersion() {
+  // Try plugin version first
   try {
     const pluginJsonPath = path.join(SCRIPTS_DIR, '..', '.claude-plugin', 'plugin.json');
     const data = JSON.parse(fs.readFileSync(pluginJsonPath, 'utf8'));
-    return data.version || '';
-  } catch {
-    return '';
-  }
+    if (data.version) return data.version;
+  } catch { /* not a plugin install */ }
+
+  // Fall back to hooks-hash (written by setup.sh for bash installs)
+  try {
+    const hashPath = path.join(DATA_DIR, 'hooks-hash');
+    const hash = fs.readFileSync(hashPath, 'utf8').trim();
+    if (hash) return hash;
+  } catch { /* no hooks-hash file */ }
+
+  return '';
 }
 
 /**
@@ -80,7 +89,7 @@ async function submitBuild(sessionFilePath) {
       delete payload.source_metadata.files_touched;
     }
 
-    const pluginVersion = getPluginVersion();
+    const pluginVersion = getHooksVersion();
     const headers = {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${API_KEY}`,
@@ -153,12 +162,25 @@ async function flushRetryQueue() {
 
     for (const { filePath } of toRetry) {
       const result = await submitBuild(filePath);
-      if (result.ok) {
+      if (result.ok && result.status !== 409) {
         try {
           const session = JSON.parse(fs.readFileSync(filePath, 'utf8'));
           session.submitted_at = new Date().toISOString();
           atomicWrite(filePath, session);
           log(`RETRY OK: ${path.basename(filePath)} (HTTP ${result.status})`);
+        } catch { /* ignore */ }
+
+        // Publish retried build with fallback title/summary so it doesn't stay draft
+        if (result.buildId) {
+          await publishWithFallback(result.buildId, 'retry_fallback', 'retried_session');
+        }
+      } else if (result.ok && result.status === 409) {
+        // Already submitted — mark so we don't retry again
+        try {
+          const session = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+          session.submitted_at = new Date().toISOString();
+          atomicWrite(filePath, session);
+          log(`RETRY SKIP: ${path.basename(filePath)} (duplicate)`);
         } catch { /* ignore */ }
       } else {
         log(`RETRY FAIL: ${path.basename(filePath)} (HTTP ${result.status})`);
@@ -385,9 +407,12 @@ async function main() {
         writeToTerminal(`  \x1b[33m\u2191\x1b[0m Promptbook update available \u2014 run: \x1b[4m/plugin update promptbook\x1b[0m\n\n`);
       }
 
-      // 3. Generate summary if enabled
+      // 3. Generate summary and publish
       if (AUTO_SUMMARY) {
         await generateAndPublish(result.buildId);
+      } else {
+        // Auto-summary disabled — publish immediately with deterministic fallback
+        await publishWithFallback(result.buildId, 'disabled', 'auto_summary_off');
       }
     }
   } else if (result.ok && result.status === 409) {
