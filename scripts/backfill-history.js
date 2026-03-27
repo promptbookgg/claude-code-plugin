@@ -176,9 +176,11 @@ function parseSession(jsonlPath) {
   const sessionId = path.basename(jsonlPath, '.jsonl');
   const projectDirName = path.basename(path.dirname(jsonlPath));
 
-  // Derive project name from encoded directory
-  const parts = projectDirName.split('-').filter(Boolean);
-  const projectName = parts.length > 0 ? parts[parts.length - 1] : projectDirName;
+  // Decode the Claude Code directory name back to a real path, then use shared
+  // deriveProjectName() which handles git worktrees.
+  // Format: -Users-foo-Desktop-myproject → /Users/foo/Desktop/myproject
+  const decodedPath = '/' + projectDirName.replace(/^-/, '').replace(/-/g, '/');
+  const projectName = deriveProjectName(decodedPath);
 
   // Extract timestamps for session duration
   const timestamps = extractTimestamps(jsonlPath);
