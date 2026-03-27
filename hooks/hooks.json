@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/session-start.sh"
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/session-start.js"
           }
         ]
       }
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/prompt-count.sh"
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/prompt-count.js"
           }
         ]
       }
@@ -28,7 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/track-edits.sh"
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/track-edits.js"
           }
         ]
       }
@@ -39,7 +39,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/session-end.sh"
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/session-end.js"
           }
         ]
       }
