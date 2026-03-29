@@ -404,7 +404,10 @@ async function main() {
       writeToTerminal(`\n  \x1b[32m\u2713\x1b[0m Progress recorded \u2192 \x1b[4m${siteUrl}/build/${result.buildId}\x1b[0m\n\n`);
 
       if (result.updateAvailable) {
-        writeToTerminal(`  \x1b[33m\u2191\x1b[0m Promptbook update available \u2014 run: \x1b[4m/plugin update promptbook\x1b[0m\n\n`);
+        const updateCmd = process.env.CLAUDE_PLUGIN_ROOT
+          ? '/plugin update promptbook'
+          : 'bash <(curl -sL promptbook.gg/setup.sh)';
+        writeToTerminal(`  \x1b[33m\u2191\x1b[0m Promptbook update available \u2014 run: \x1b[4m${updateCmd}\x1b[0m\n\n`);
       }
 
       // 3. Generate summary and publish
