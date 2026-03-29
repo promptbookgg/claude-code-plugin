@@ -1,4 +1,5 @@
 ---
+name: doctor
 description: Diagnose Promptbook setup — check config, hooks, API key, and session tracking health
 disable-model-invocation: true
 ---
