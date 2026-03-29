@@ -9,11 +9,11 @@ const path = require('path');
 const os = require('os');
 
 /**
- * Resolve the data directory.
- * Plugin installs set CLAUDE_PLUGIN_DATA; bash installs use ~/.promptbook.
+ * Resolve the data directory — always ~/.promptbook.
+ * Both plugin and bash installs share this location.
  */
 function getDataDir() {
-  return process.env.CLAUDE_PLUGIN_DATA || path.join(os.homedir(), '.promptbook');
+  return path.join(os.homedir(), '.promptbook');
 }
 
 /**
@@ -30,30 +30,22 @@ function readStdin() {
 }
 
 /**
- * Read config.json — always from ~/.promptbook (canonical location).
- * Both plugin and bash installs save config here.
- * Falls back to dataDir for legacy installs.
+ * Read config.json from ~/.promptbook/config.json.
  * Returns { api_key, api_url, auto_summary } or null.
  */
-function readConfig(dataDir) {
-  const candidates = [
-    path.join(os.homedir(), '.promptbook', 'config.json'),
-    path.join(dataDir, 'config.json'),
-  ];
-  for (const configPath of candidates) {
-    try {
-      const raw = fs.readFileSync(configPath, 'utf8');
-      const config = JSON.parse(raw);
-      if (config.api_key) {
-        return {
-          api_key: config.api_key,
-          api_url: config.api_url || '',
-          auto_summary: config.auto_summary !== false,
-        };
-      }
-    } catch { /* try next */ }
+function readConfig() {
+  try {
+    const configPath = path.join(os.homedir(), '.promptbook', 'config.json');
+    const raw = fs.readFileSync(configPath, 'utf8');
+    const config = JSON.parse(raw);
+    return {
+      api_key: config.api_key || '',
+      api_url: config.api_url || '',
+      auto_summary: config.auto_summary !== false,
+    };
+  } catch {
+    return null;
   }
-  return null;
 }
 
 /**

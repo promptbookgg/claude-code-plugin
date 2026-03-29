@@ -66,7 +66,7 @@ async function main() {
   // Fetch recent session summaries from Promptbook API and print to stdout.
   // Claude Code injects stdout from SessionStart hooks as conversation context.
   // Fails silently — if the API is unreachable, Claude Code works normally.
-  const config = readConfig(DATA_DIR);
+  const config = readConfig();
   if (config && config.api_key && config.api_url) {
     const encodedProject = encodeURIComponent(projectName);
     const url = `${config.api_url}/api/hooks/session-context?project_name=${encodedProject}`;

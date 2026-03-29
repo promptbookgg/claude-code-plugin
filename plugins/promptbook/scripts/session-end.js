@@ -108,7 +108,7 @@ try {
     }
 
     // Check if config exists for submission
-    const config = readConfig(DATA_DIR);
+    const config = readConfig();
     if (!config || !config.api_key || !config.api_url) {
       if (compactLogFile) try { fs.unlinkSync(compactLogFile); } catch { /* ignore */ }
       process.exit(0);
