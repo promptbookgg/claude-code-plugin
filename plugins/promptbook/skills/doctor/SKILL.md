@@ -12,14 +12,11 @@ Run diagnostics to check if Promptbook is set up correctly. Execute each check v
 Run these checks in order and report each result:
 
 ### 1. Config file exists
-Check if the config file exists at `$CLAUDE_PLUGIN_DATA/config.json` (plugin install) or `~/.promptbook/config.json` (bash install).
+Check if the config file exists at `~/.promptbook/config.json` (canonical location for both plugin and bash installs).
 
 ```bash
-if [ -f "${CLAUDE_PLUGIN_DATA:-/nonexistent}/config.json" ]; then
-  echo "PLUGIN_CONFIG"
-  cat "${CLAUDE_PLUGIN_DATA}/config.json"
-elif [ -f "$HOME/.promptbook/config.json" ]; then
-  echo "BASH_CONFIG"
+if [ -f "$HOME/.promptbook/config.json" ]; then
+  echo "CONFIG_FOUND"
   cat "$HOME/.promptbook/config.json"
 else
   echo "NO_CONFIG"

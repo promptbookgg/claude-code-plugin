@@ -40,18 +40,17 @@ Only aggregate stats (prompt count, tokens, build time, lines changed) are sent 
    ```
    Parse the JSON response to extract `api_key`.
 
-5. **Save the config** to the plugin's persistent data directory. First check if `$CLAUDE_PLUGIN_DATA` is set and non-empty. If it is, use it. If it's empty or unset, fall back to `$HOME/.promptbook`. Create the directory if needed, then write `config.json`:
+5. **Save the config** to `~/.promptbook/config.json`. This is the canonical config location shared by both plugin and bash installs:
    ```bash
-   config_dir="${CLAUDE_PLUGIN_DATA:-$HOME/.promptbook}"
-   mkdir -p "$config_dir"
-   cat > "$config_dir/config.json" << 'JSONEOF'
+   mkdir -p "$HOME/.promptbook"
+   cat > "$HOME/.promptbook/config.json" << 'JSONEOF'
    {
      "api_key": "<api_key from step 4>",
      "api_url": "https://promptbook.gg",
      "auto_summary": true
    }
    JSONEOF
-   chmod 600 "$config_dir/config.json"
+   chmod 600 "$HOME/.promptbook/config.json"
    ```
 
 6. **Verify setup** with the server using the api_key from step 4:
