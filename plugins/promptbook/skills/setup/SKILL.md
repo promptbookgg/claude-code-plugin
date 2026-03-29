@@ -1,7 +1,6 @@
 ---
 name: setup
 description: Set up Promptbook — connect your account to start tracking builds
-disable-model-invocation: true
 ---
 
 # Promptbook Setup
