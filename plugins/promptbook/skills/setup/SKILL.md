@@ -8,7 +8,7 @@ description: Set up Promptbook — connect your account to start tracking builds
 Help the user connect their Promptbook account using the device-code auth flow. Run all commands yourself via Bash — the user just waits for the browser sign-in.
 
 ## Privacy note
-Only aggregate stats (prompt count, tokens, build time, lines changed) are sent to Promptbook servers. No source code or prompt content is ever sent to promptbook.gg. To generate a title and summary for each Build Card, the plugin calls Claude Haiku via the user's own Claude credentials — this data goes to Anthropic (same as normal Claude Code usage), never to Promptbook.
+Only aggregate stats (prompt count, tokens, build time, lines changed) are sent to Promptbook servers. No source code or prompt content is ever sent to promptbook.gg. To generate a title and summary for each build, the plugin calls Claude Haiku via the user's own Claude credentials — this data goes to Anthropic (same as normal Claude Code usage), never to Promptbook.
 
 ## Steps
 
@@ -30,7 +30,7 @@ Only aggregate stats (prompt count, tokens, build time, lines changed) are sent 
    ```bash
    curl -sL "https://promptbook.gg/api/auth/setup-session/<token value>/status"
    ```
-   Wait until the response JSON has `status` equal to `"authorized"` (timeout after 5 minutes).
+   Parse the JSON response and check whether the `status` field equals `"authorized"`. Use a unique variable name like `poll_result` or `auth_status` to avoid colliding with shell built-ins (do NOT use a variable named `status`). Timeout after 5 minutes.
 
 4. **Exchange the device code for an API key** using the `device_code` value from step 1. Use double quotes so the variable interpolates:
    ```bash
@@ -40,15 +40,19 @@ Only aggregate stats (prompt count, tokens, build time, lines changed) are sent 
    ```
    Parse the JSON response to extract `api_key`.
 
-5. **Save the config** to the plugin's persistent data directory. The environment variable `CLAUDE_PLUGIN_DATA` contains the path. Write to `$CLAUDE_PLUGIN_DATA/config.json`:
-   ```json
+5. **Save the config** to the plugin's persistent data directory. First check if `$CLAUDE_PLUGIN_DATA` is set and non-empty. If it is, use it. If it's empty or unset, fall back to `$HOME/.promptbook`. Create the directory if needed, then write `config.json`:
+   ```bash
+   config_dir="${CLAUDE_PLUGIN_DATA:-$HOME/.promptbook}"
+   mkdir -p "$config_dir"
+   cat > "$config_dir/config.json" << 'JSONEOF'
    {
      "api_key": "<api_key from step 4>",
      "api_url": "https://promptbook.gg",
      "auto_summary": true
    }
+   JSONEOF
+   chmod 600 "$config_dir/config.json"
    ```
-   Set file permissions to 600 (user read/write only).
 
 6. **Verify setup** with the server using the api_key from step 4:
    ```bash
@@ -57,12 +61,13 @@ Only aggregate stats (prompt count, tokens, build time, lines changed) are sent 
    ```
 
 7. **Confirm completion.** Tell the user:
-   - "You're all set. Every Claude Code session will now automatically create a Build Card on promptbook.gg."
-   - "You'll see a link after each session ends."
-   - "Run `/promptbook:setup` again anytime to reconnect or switch accounts."
+   - "You're all set! Tracking starts on your **next** Claude Code session."
+   - "Here's how it works: when you start a new session, the plugin automatically tracks your prompts, tokens, build time, and lines changed. When the session ends, it creates a build on promptbook.gg with a link you can share."
+   - "This current session won't be tracked — start a new one to see it in action."
+   - "Run `/setup` again anytime to reconnect or switch accounts."
 
 ## Important
 - Run all curl commands via Bash, not by asking the user to do anything.
 - The entire flow should be automated — the user just waits for the browser sign-in.
-- If any step fails, give a clear error message and suggest running `/promptbook:setup` again.
+- If any step fails, give a clear error message and suggest running `/setup` again.
 - Never display the API key to the user.

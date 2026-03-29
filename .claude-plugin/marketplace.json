@@ -12,7 +12,7 @@
       "name": "promptbook",
       "source": "./plugins/promptbook",
       "description": "Track your Claude Code sessions automatically. See your prompts, tokens, and build time — share your builds on promptbook.gg.",
-      "version": "1.0.2"
+      "version": "1.1.0"
     }
   ]
 }

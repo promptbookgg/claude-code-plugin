@@ -26,7 +26,7 @@ else
 fi
 ```
 
-If no config file found: tell the user to run `/promptbook:setup` first.
+If no config file found: tell the user to run `/setup` first.
 
 ### 2. API key is valid
 Extract the `api_key` from the config file found in step 1 and test it:
@@ -37,7 +37,7 @@ curl -sL -o /dev/null -w "%{http_code}" -X POST "https://promptbook.gg/api/auth/
 ```
 
 - 200 = valid and verified
-- 401 = invalid key — suggest running `/promptbook:setup` again
+- 401 = invalid key — suggest running `/setup` again
 - Other = network issue — suggest checking connectivity
 
 ### 3. Hooks are registered
