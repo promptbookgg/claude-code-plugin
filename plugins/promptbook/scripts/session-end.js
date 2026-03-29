@@ -139,7 +139,6 @@ try {
       process.exit(0);
     }
     const child = spawn('node', [submitScript], {
-      detached: true,
       stdio: 'ignore',
       env: {
         ...process.env,
