@@ -98,6 +98,14 @@ try {
 
     atomicWrite(sessionFile, session);
 
+    // Skip subagent sessions — Claude Code spawns subagents (via Agent tool)
+    // with their own session_id, but they don't receive model info in hooks.
+    // If model is still "unknown" after transcript parsing, it's a subagent.
+    if (session.model === 'unknown') {
+      if (compactLogFile) try { fs.unlinkSync(compactLogFile); } catch { /* ignore */ }
+      process.exit(0);
+    }
+
     // Skip submission for sessions with no user interaction, very short duration,
     // AND negligible token usage. These are tooling artifacts.
     const promptCount = session.prompt_count || 0;
