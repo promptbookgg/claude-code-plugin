@@ -22,6 +22,8 @@ function getDataDir() {
  */
 function readStdin() {
   try {
+    // Guard against hanging on TTY stdin (no piped data)
+    if (process.stdin.isTTY) return null;
     const raw = fs.readFileSync(0, 'utf8');
     return JSON.parse(raw);
   } catch {
@@ -137,6 +139,16 @@ function readSession(sessionsDir, sessionId) {
   }
 }
 
+/**
+ * Validate that a session ID is safe for use in filenames.
+ * Claude Code session IDs are UUIDs — reject anything else
+ * to prevent path traversal via crafted session_id values.
+ */
+const SESSION_ID_RE = /^[a-zA-Z0-9_-]+$/;
+function isValidSessionId(id) {
+  return typeof id === 'string' && id.length > 0 && id.length <= 128 && SESSION_ID_RE.test(id);
+}
+
 module.exports = {
   getDataDir,
   readStdin,
@@ -146,4 +158,5 @@ module.exports = {
   releaseLock,
   appendLog,
   readSession,
+  isValidSessionId,
 };

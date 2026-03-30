@@ -11,14 +11,14 @@
 
 const fs = require('fs');
 const path = require('path');
-const { getDataDir, readStdin, readConfig, appendLog } = require('./lib/io');
+const { getDataDir, readStdin, readConfig, appendLog, isValidSessionId } = require('./lib/io');
 const { deriveProjectName } = require('./lib/language');
 
 const DATA_DIR = getDataDir();
 
 async function main() {
   const input = readStdin();
-  if (!input || !input.session_id) return;
+  if (!input || !input.session_id || !isValidSessionId(input.session_id)) return;
 
   const sessionsDir = path.join(DATA_DIR, 'sessions');
   fs.mkdirSync(sessionsDir, { recursive: true });

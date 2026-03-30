@@ -11,7 +11,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
-const { getDataDir, readStdin, readConfig, acquireLock, releaseLock, atomicWrite, appendLog } = require('./lib/io');
+const { getDataDir, readStdin, readConfig, acquireLock, releaseLock, atomicWrite, appendLog, isValidSessionId } = require('./lib/io');
 const { getPrimaryLanguage } = require('./lib/language');
 const { parseTranscript } = require('./lib/transcript');
 
@@ -25,7 +25,7 @@ try {
   if (process.env.PROMPTBOOK_SKIP_HOOKS === '1') process.exit(0);
 
   const input = readStdin();
-  if (!input || !input.session_id) process.exit(0);
+  if (!input || !input.session_id || !isValidSessionId(input.session_id)) process.exit(0);
 
   const sessionsDir = path.join(DATA_DIR, 'sessions');
   const sessionFile = path.join(sessionsDir, `${input.session_id}.json`);
@@ -147,8 +147,8 @@ try {
         PROMPTBOOK_SESSION_FILE: sessionFile,
         PROMPTBOOK_TRANSCRIPT_PATH: transcriptPath,
         PROMPTBOOK_COMPACT_LOG_FILE: compactLogFile,
-        PROMPTBOOK_API_KEY: config.api_key,
-        PROMPTBOOK_API_URL: config.api_url,
+        // API credentials read from ~/.promptbook/config.json by submit.js
+        // (not passed via env vars — env is visible via ps)
         PROMPTBOOK_AUTO_SUMMARY: String(config.auto_summary),
         PROMPTBOOK_CLAUDE_BIN: claudeBin,
         PROMPTBOOK_PROMPT_COUNT: String(promptCount),

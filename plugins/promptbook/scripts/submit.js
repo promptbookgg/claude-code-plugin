@@ -9,14 +9,14 @@
  * 3. Generate title/summary via Haiku (or fallback)
  * 4. PATCH the build card
  *
- * All config comes via environment variables set by session-end.js.
+ * Session metadata comes via env vars; API credentials read from config file.
  */
 'use strict';
 
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
-const { atomicWrite, appendLog } = require('./lib/io');
+const { execSync, execFileSync } = require('child_process');
+const { atomicWrite, appendLog, readConfig } = require('./lib/io');
 const {
   formatDuration, formatTokens,
   generateFallbackTitle, generateFallbackSummary,
@@ -28,8 +28,6 @@ const SESSION_ID = process.env.PROMPTBOOK_SESSION_ID;
 const SESSION_FILE = process.env.PROMPTBOOK_SESSION_FILE;
 const TRANSCRIPT_PATH = process.env.PROMPTBOOK_TRANSCRIPT_PATH || '';
 const COMPACT_LOG_FILE = process.env.PROMPTBOOK_COMPACT_LOG_FILE || '';
-const API_KEY = process.env.PROMPTBOOK_API_KEY;
-const API_URL = process.env.PROMPTBOOK_API_URL;
 const AUTO_SUMMARY = process.env.PROMPTBOOK_AUTO_SUMMARY !== 'false';
 const CLAUDE_BIN = process.env.PROMPTBOOK_CLAUDE_BIN || '';
 const PROMPT_COUNT = process.env.PROMPTBOOK_PROMPT_COUNT || '0';
@@ -41,13 +39,24 @@ const PROJECT_NAME = process.env.PROMPTBOOK_PROJECT_NAME || '';
 const DATA_DIR = process.env.PROMPTBOOK_DATA_DIR;
 const SCRIPTS_DIR = process.env.PROMPTBOOK_SCRIPTS_DIR;
 
-// Validate required env vars early
+// Read API credentials from config file (not env vars — env is visible via ps)
+const config = readConfig();
+const API_KEY = config?.api_key || '';
+const API_URL = config?.api_url || '';
+
+// Validate required values early
 if (!SESSION_ID || !SESSION_FILE || !API_KEY || !API_URL || !DATA_DIR) {
   process.exit(0);
 }
 
 function log(message) {
   appendLog(DATA_DIR, 'submit.log', `session=${SESSION_ID} | ${message}`);
+}
+
+/** Validate that a string looks like a UUID (prevents path traversal in URL construction). */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function isValidBuildId(id) {
+  return typeof id === 'string' && UUID_RE.test(id);
 }
 
 /**
@@ -108,9 +117,10 @@ async function submitBuild(sessionFilePath) {
     if (response.status === 201) {
       let parsed = {};
       try { parsed = JSON.parse(body); } catch { /* ignore */ }
+      const buildId = isValidBuildId(parsed.id) ? parsed.id : '';
       return {
         ok: true,
-        buildId: parsed.id || '',
+        buildId,
         updateAvailable: parsed.update_available || false,
         status: 201,
       };
@@ -295,11 +305,11 @@ async function generateAndPublish(buildId) {
 
   // Build prompt and call Haiku
   const prompt = buildSummaryPrompt(compactLog, PROJECT_NAME, PROMPT_COUNT);
-  log(`START: calling ${claudeCmd} --print --model haiku | prompt_chars=${prompt.length} compact_log_chars=${compactLog.length}`);
+  log(`START: calling claude --print --model haiku | prompt_chars=${prompt.length} compact_log_chars=${compactLog.length}`);
 
   let response = '';
   try {
-    response = execSync(`${claudeCmd} --print --model haiku`, {
+    response = execFileSync(claudeCmd, ['--print', '--model', 'haiku'], {
       input: prompt,
       encoding: 'utf8',
       timeout: 60000,

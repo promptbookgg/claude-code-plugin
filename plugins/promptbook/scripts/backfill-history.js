@@ -17,7 +17,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { execSync } = require('child_process');
+const { execSync, execFileSync } = require('child_process');
 const { parseTranscript } = require('./lib/transcript');
 const { getPrimaryLanguage, deriveProjectName } = require('./lib/language');
 const { buildSummaryPrompt, generateFallbackTitle, generateFallbackSummary, getDominantTool } = require('./lib/summary');
@@ -272,7 +272,7 @@ function generateSummary(session) {
   if (claudeCmd) {
     try {
       const prompt = buildSummaryPrompt(compactLog, session.project_name, session.prompt_count);
-      const response = execSync(`${claudeCmd} --print --model haiku`, {
+      const response = execFileSync(claudeCmd, ['--print', '--model', 'haiku'], {
         input: prompt,
         encoding: 'utf8',
         timeout: 60000,

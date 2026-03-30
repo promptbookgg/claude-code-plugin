@@ -5,5 +5,11 @@
   "author": {
     "name": "Promptbook",
     "email": "hello@promptbook.gg"
-  }
+  },
+  "homepage": "https://promptbook.gg",
+  "repository": "https://github.com/promptbookgg/claude-code-plugin",
+  "license": "MIT",
+  "keywords": ["tracking", "builds", "productivity", "portfolio"],
+  "skills": "./skills/",
+  "hooks": "./hooks/hooks.json"
 }

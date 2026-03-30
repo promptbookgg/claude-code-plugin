@@ -8,13 +8,13 @@
 
 const fs = require('fs');
 const path = require('path');
-const { getDataDir, readStdin, acquireLock, releaseLock, atomicWrite, appendLog } = require('./lib/io');
+const { getDataDir, readStdin, acquireLock, releaseLock, atomicWrite, appendLog, isValidSessionId } = require('./lib/io');
 
 const DATA_DIR = getDataDir();
 
 try {
   const input = readStdin();
-  if (!input || !input.session_id) process.exit(0);
+  if (!input || !input.session_id || !isValidSessionId(input.session_id)) process.exit(0);
 
   const sessionsDir = path.join(DATA_DIR, 'sessions');
   const sessionFile = path.join(sessionsDir, `${input.session_id}.json`);
