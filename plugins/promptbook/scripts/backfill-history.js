@@ -20,7 +20,7 @@ const os = require('os');
 const { execSync, execFileSync } = require('child_process');
 const { parseTranscript } = require('./lib/transcript');
 const { getPrimaryLanguage, deriveProjectName } = require('./lib/language');
-const { buildSummaryPrompt, generateFallbackTitle, generateFallbackSummary, getDominantTool } = require('./lib/summary');
+const { buildSummaryPrompt, generateFallbackTitle, generateFallbackSummary } = require('./lib/summary');
 
 // --- CLI argument parsing ---
 const args = process.argv.slice(2);

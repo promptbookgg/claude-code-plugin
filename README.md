@@ -21,7 +21,7 @@ Then run `/promptbook:setup` to connect your account.
 - Lines changed
 - Primary language
 
-That's it. No source code. No prompt content. Only aggregate stats are sent to Promptbook.
+No source code or prompt content is ever sent. See the Privacy section below for exactly what is sent.
 
 ## How it works
 
@@ -38,7 +38,11 @@ After each session, you'll see a link to your progress. Customize the title, sum
 
 ## Privacy
 
-Only aggregate stats leave your machine. The plugin also generates a short title and summary by calling Claude Haiku through your own Claude credentials — this goes to Anthropic (same as any Claude Code usage), never to Promptbook.
+**What is sent to promptbook.gg:** session ID, project name, model, timestamps, prompt count, token counts, build time, lines changed, language, file extension counts (e.g. `{ts: 5, css: 2}`), and tool usage counts (e.g. `{Edit: 12, Read: 8}`).
+
+**What is never sent:** source code, prompt content, file contents, file paths, or your working directory.
+
+The plugin also generates a short title and summary by calling Claude Haiku through your own Claude credentials — this goes to Anthropic (same as any Claude Code usage), never to Promptbook.
 
 You can audit everything: the hooks are right here in this repo.
 

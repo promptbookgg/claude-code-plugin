@@ -16,7 +16,10 @@ Run these checks in order and report each result:
 ```bash
 if [ -f "$HOME/.promptbook/config.json" ]; then
   echo "CONFIG_FOUND"
-  cat "$HOME/.promptbook/config.json"
+  # Check permissions (should be 600)
+  stat -f "%Lp" "$HOME/.promptbook/config.json" 2>/dev/null || stat -c "%a" "$HOME/.promptbook/config.json" 2>/dev/null
+  # Check required fields exist (without displaying values)
+  node -e "const c=JSON.parse(require('fs').readFileSync('$HOME/.promptbook/config.json','utf8'));console.log('has_api_key:',!!c.api_key);console.log('has_api_url:',!!c.api_url);console.log('auto_summary:',c.auto_summary)"
 else
   echo "NO_CONFIG"
 fi
@@ -25,11 +28,12 @@ fi
 If no config file found: tell the user to run `/setup` first.
 
 ### 2. API key is valid
-Extract the `api_key` from the config file found in step 1 and test it:
+Use the config file to test the API key without displaying it:
 
 ```bash
+API_KEY=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$HOME/.promptbook/config.json','utf8')).api_key)")
 curl -sL -o /dev/null -w "%{http_code}" -X POST "https://promptbook.gg/api/auth/verify-setup" \
-  -H "Authorization: Bearer <api_key>"
+  -H "Authorization: Bearer $API_KEY"
 ```
 
 - 200 = valid and verified

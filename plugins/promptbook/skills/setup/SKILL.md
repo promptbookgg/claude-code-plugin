@@ -8,7 +8,7 @@ description: Set up Promptbook — connect your account to start tracking builds
 Help the user connect their Promptbook account using the device-code auth flow. Run all commands yourself via Bash — the user just waits for the browser sign-in.
 
 ## Privacy note
-Only aggregate stats (prompt count, tokens, build time, lines changed) are sent to Promptbook servers. No source code or prompt content is ever sent to promptbook.gg. To generate a title and summary for each build, the plugin calls Claude Haiku via the user's own Claude credentials — this data goes to Anthropic (same as normal Claude Code usage), never to Promptbook.
+What is sent to promptbook.gg: session ID, project name, model, timestamps, prompt count, token counts, build time, lines changed, language, file extension counts, and tool usage counts. No source code, prompt content, file contents, file paths, or working directory is ever sent. To generate a title and summary for each build, the plugin calls Claude Haiku via the user's own Claude credentials — this data goes to Anthropic (same as normal Claude Code usage), never to Promptbook.
 
 ## Steps
 

@@ -18,7 +18,6 @@ const path = require('path');
 const { execSync, execFileSync } = require('child_process');
 const { atomicWrite, appendLog, readConfig } = require('./lib/io');
 const {
-  formatDuration, formatTokens,
   generateFallbackTitle, generateFallbackSummary,
   buildSummaryPrompt,
 } = require('./lib/summary');
@@ -89,10 +88,12 @@ async function submitBuild(sessionFilePath) {
   try {
     const session = JSON.parse(fs.readFileSync(sessionFilePath, 'utf8'));
 
-    // Strip sensitive fields before sending
+    // Strip sensitive/unnecessary fields before sending
     const payload = { ...session };
     delete payload.files_touched;
     delete payload.compact_log;
+    delete payload.cwd;
+    delete payload.prompt_timestamps;
     if (payload.source_metadata) {
       payload.source_metadata = { ...payload.source_metadata };
       delete payload.source_metadata.files_touched;
