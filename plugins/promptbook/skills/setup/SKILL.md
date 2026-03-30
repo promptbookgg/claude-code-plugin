@@ -65,6 +65,32 @@ Only aggregate stats (prompt count, tokens, build time, lines changed) are sent 
    - "This current session won't be tracked — start a new one to see it in action."
    - "Run `/setup` again anytime to reconnect or switch accounts."
 
+8. **Offer history backfill.** After setup is complete, ask the user: "Want me to scan your Claude Code history for past sessions? I can find builds from the last 90 days and upload them to your profile."
+
+   If they say yes, first find the backfill script. Check these paths in order:
+   - `~/.promptbook/hooks/backfill-history.js` (bash install)
+   - The plugin's own scripts directory (find it with: `find ~/.claude -path "*/promptbook/scripts/backfill-history.js" -type f 2>/dev/null | head -1`)
+
+   If neither exists, download it:
+   ```bash
+   mkdir -p ~/.promptbook/hooks/lib
+   for f in backfill-history.js lib/io.js lib/transcript.js lib/language.js lib/summary.js; do
+     curl -sfL "https://promptbook.gg/hooks/$f" -o "$HOME/.promptbook/hooks/$f"
+   done
+   ```
+
+   Then run it:
+   ```bash
+   node <path-to-backfill-history.js> \
+     --days 90 \
+     --api-url "https://promptbook.gg" \
+     --api-key "<api_key from step 4>" \
+     --generate-summaries
+   ```
+   The script scans local JSONL transcripts and uploads aggregate stats (never code or prompts). It outputs a batch ID on stdout.
+   If the batch ID is returned, tell the user: "Sessions uploaded! Review and import them at https://promptbook.gg/setup/history"
+   If the user declines, that's fine — they can always run it later.
+
 ## Important
 - Run all curl commands via Bash, not by asking the user to do anything.
 - The entire flow should be automated — the user just waits for the browser sign-in.
