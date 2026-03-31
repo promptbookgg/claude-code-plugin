@@ -364,6 +364,8 @@ function findJsonlFiles() {
         const stat = fs.statSync(filePath);
         if (!stat.isFile()) continue;
         const mtime = stat.mtimeMs;
+        // Skip files modified in the last 3 minutes — likely in-progress sessions
+        if (Date.now() - mtime < 3 * 60 * 1000) continue;
         if (mtime >= afterCutoff && (!beforeCutoff || mtime < beforeCutoff)) {
           files.push(filePath);
         }
@@ -549,6 +551,7 @@ function generateSummary(session) {
 async function uploadBatch(sessions, apiUrl, apiKey, batchId) {
   const chunkSize = 50;
   let uploadedCount = 0;
+  const insertedIds = [];
 
   for (let i = 0; i < sessions.length; i += chunkSize) {
     const chunk = sessions.slice(i, i + chunkSize);
@@ -585,6 +588,9 @@ async function uploadBatch(sessions, apiUrl, apiKey, batchId) {
 
       const body = await response.json();
       uploadedCount += body.uploaded || 0;
+      if (Array.isArray(body.inserted_ids)) {
+        insertedIds.push(...body.inserted_ids);
+      }
       log(`  Uploaded ${body.uploaded || 0} sessions (${body.duplicates || 0} duplicates)`);
     } catch (err) {
       log(`  Upload failed: ${err.message}`);
@@ -597,7 +603,7 @@ async function uploadBatch(sessions, apiUrl, apiKey, batchId) {
     }
   }
 
-  return uploadedCount;
+  return { uploadedCount, insertedIds };
 }
 
 // --- Main ---
@@ -734,10 +740,14 @@ async function main() {
     summarized_count: 0,
   });
 
-  const uploadedCount = await uploadBatch(sessions, apiUrl, apiKey, batchId);
+  const { uploadedCount, insertedIds } = await uploadBatch(sessions, apiUrl, apiKey, batchId);
   let summarizedCount = 0;
   let summaryFailures = 0;
   if (GENERATE_SUMMARIES && uploadedCount > 0) {
+    // Only summarize sessions that were actually inserted (not duplicates)
+    const insertedSet = new Set(insertedIds);
+    const toSummarize = sessions.filter(s => insertedSet.has(s.session_id));
+
     await updateBatchProgress(apiUrl, apiKey, batchId, {
       status: 'summarizing',
       session_count: uploadedCount,
@@ -746,9 +756,9 @@ async function main() {
       summarized_count: 0,
     });
 
-    log(`Generating summaries for ${sessions.length} sessions...`);
-    for (let i = 0; i < sessions.length; i++) {
-      const s = sessions[i];
+    log(`Generating summaries for ${toSummarize.length} sessions (${sessions.length - toSummarize.length} duplicates skipped)...`);
+    for (let i = 0; i < toSummarize.length; i++) {
+      const s = toSummarize[i];
       const result = generateSummary(s);
       if (result) {
         s.title = result.title;
@@ -758,7 +768,7 @@ async function main() {
           summarizedCount++;
           if (!JSON_MODE) {
             const label = result.title.length > 50 ? result.title.slice(0, 50) + '...' : result.title;
-            log(`  [${i + 1}/${sessions.length}] ${label}`);
+            log(`  [${i + 1}/${toSummarize.length}] ${label}`);
           }
         } catch (err) {
           if (err.statusCode === 404) {
@@ -775,7 +785,7 @@ async function main() {
         }
       }
 
-      if (!DRY_RUN && !JSON_MODE && ((i + 1) % 5 === 0 || i + 1 === sessions.length)) {
+      if (!DRY_RUN && !JSON_MODE && ((i + 1) % 5 === 0 || i + 1 === toSummarize.length)) {
         await updateBatchProgress(apiUrl, apiKey, batchId, {
           status: 'summarizing',
           summarized_count: summarizedCount,

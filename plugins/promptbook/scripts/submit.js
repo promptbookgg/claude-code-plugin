@@ -133,7 +133,10 @@ async function submitBuild(sessionFilePath) {
 
     // 409 = duplicate session — treat as success (already submitted)
     if (response.status === 409) {
-      return { ok: true, buildId: '', updateAvailable: false, status: 409 };
+      let parsed = {};
+      try { parsed = JSON.parse(body); } catch { /* ignore */ }
+      const existingId = isValidBuildId(parsed.build_id) ? parsed.build_id : '';
+      return { ok: true, buildId: existingId, updateAvailable: false, status: 409 };
     }
 
     return { ok: false, status: response.status, body };
@@ -374,6 +377,24 @@ async function generateAndPublish(buildId) {
   }
 }
 
+/**
+ * Write a message directly to the user's terminal (even from a detached process).
+ */
+function writeToTerminal(msg) {
+  try {
+    const fd = fs.openSync('/dev/tty', 'w');
+    fs.writeSync(fd, msg);
+    fs.closeSync(fd);
+    return;
+  } catch { /* not Unix or no tty */ }
+  try {
+    const fd = fs.openSync('CON', 'w');
+    fs.writeSync(fd, msg);
+    fs.closeSync(fd);
+    return;
+  } catch { /* not Windows or no console */ }
+}
+
 // --- Main ---
 async function main() {
   log(`--- ${new Date().toISOString()} | session=${SESSION_ID} ---`);
@@ -395,27 +416,7 @@ async function main() {
     } catch { /* ignore */ }
 
     if (result.buildId) {
-      // Print success notification to terminal
-      // Try /dev/tty first (Unix), fall back to CON (Windows), then stderr
       const siteUrl = API_URL.replace(/\/api.*/, '').replace(/\/$/, '');
-      const writeToTerminal = (msg) => {
-        // Try /dev/tty (Unix)
-        try {
-          const fd = fs.openSync('/dev/tty', 'w');
-          fs.writeSync(fd, msg);
-          fs.closeSync(fd);
-          return;
-        } catch { /* not Unix or no tty */ }
-        // Try CON (Windows)
-        try {
-          const fd = fs.openSync('CON', 'w');
-          fs.writeSync(fd, msg);
-          fs.closeSync(fd);
-          return;
-        } catch { /* not Windows or no console */ }
-        // Last resort: stderr (may not be visible in detached process)
-      };
-
       writeToTerminal(`\n  \x1b[32m\u2713\x1b[0m Progress recorded \u2192 \x1b[4m${siteUrl}/build/${result.buildId}\x1b[0m\n\n`);
 
       if (result.updateAvailable) {
@@ -441,6 +442,12 @@ async function main() {
       session.submitted_at = new Date().toISOString();
       atomicWrite(SESSION_FILE, session);
     } catch { /* ignore */ }
+
+    // Still show terminal link if we have the existing build ID
+    if (result.buildId) {
+      const siteUrl = API_URL.replace(/\/api.*/, '').replace(/\/$/, '');
+      writeToTerminal(`\n  \x1b[32m\u2713\x1b[0m Progress recorded \u2192 \x1b[4m${siteUrl}/build/${result.buildId}\x1b[0m\n\n`);
+    }
   } else {
     log(`FAIL (HTTP ${result.status}): ${result.body || 'unknown error'}`);
     // Don't mark as submitted — will be retried on next session end
