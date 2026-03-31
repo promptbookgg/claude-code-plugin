@@ -309,7 +309,7 @@ function parseSubagentTokens(transcriptPath) {
 
   let files;
   try {
-    files = fs.readdirSync(subagentsDir).filter(f => f.endsWith('.jsonl'));
+    files = fs.readdirSync(subagentsDir).filter(f => /^agent-.*\.jsonl$/.test(f));
   } catch { return null; }
 
   if (files.length === 0) return null;
