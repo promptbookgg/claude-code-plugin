@@ -118,6 +118,28 @@ async function finalizeBatchProgress(apiUrl, apiKey, batchId, update) {
   throw lastError || new Error('Failed to finalize backfill progress');
 }
 
+async function updateBuildSummary(apiUrl, apiKey, batchId, session) {
+  const response = await fetch(`${apiUrl}/api/backfill/summary`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      batch_id: batchId,
+      session_id: session.session_id,
+      title: session.title,
+      summary: session.summary,
+    }),
+    signal: AbortSignal.timeout(30000),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Failed to update summary (HTTP ${response.status}): ${body}`);
+  }
+}
+
 /**
  * Count real user prompts in a JSONL file.
  * Only counts type=user entries with actual text content (not empty tool results).
@@ -539,34 +561,11 @@ async function main() {
   if (!JSON_MODE) log(`Parsed ${sessions.length} sessions (${skipped} skipped)`);
   if (!DRY_RUN && !JSON_MODE) {
     await updateBatchProgress(apiUrl, apiKey, batchId, {
-      status: GENERATE_SUMMARIES && sessions.length > 0 ? 'summarizing' : 'uploading',
+      status: 'uploading',
       candidate_count: sessions.length,
       skipped_count: skipped,
       summarized_count: 0,
     });
-  }
-
-  // Generate summaries if requested
-  if (GENERATE_SUMMARIES && sessions.length > 0) {
-    log(`Generating summaries for ${sessions.length} sessions...`);
-    for (let i = 0; i < sessions.length; i++) {
-      const s = sessions[i];
-      const result = generateSummary(s);
-      if (result) {
-        s.title = result.title;
-        s.summary = result.summary;
-        if (!JSON_MODE) {
-          const label = result.title.length > 50 ? result.title.slice(0, 50) + '...' : result.title;
-          log(`  [${i + 1}/${sessions.length}] ${label}`);
-        }
-      }
-      if (!DRY_RUN && !JSON_MODE && ((i + 1) % 5 === 0 || i + 1 === sessions.length)) {
-        await updateBatchProgress(apiUrl, apiKey, batchId, {
-          status: 'summarizing',
-          summarized_count: i + 1,
-        });
-      }
-    }
   }
 
   // --json mode
@@ -608,10 +607,42 @@ async function main() {
 
   await updateBatchProgress(apiUrl, apiKey, batchId, {
     status: 'uploading',
-    summarized_count: GENERATE_SUMMARIES ? sessions.length : 0,
+    summarized_count: 0,
   });
 
   const uploadedCount = await uploadBatch(sessions, apiUrl, apiKey, batchId);
+  if (GENERATE_SUMMARIES && uploadedCount > 0) {
+    await updateBatchProgress(apiUrl, apiKey, batchId, {
+      status: 'summarizing',
+      session_count: uploadedCount,
+      candidate_count: sessions.length,
+      skipped_count: skipped,
+      summarized_count: 0,
+    });
+
+    log(`Generating summaries for ${sessions.length} sessions...`);
+    for (let i = 0; i < sessions.length; i++) {
+      const s = sessions[i];
+      const result = generateSummary(s);
+      if (result) {
+        s.title = result.title;
+        s.summary = result.summary;
+        await updateBuildSummary(apiUrl, apiKey, batchId, s);
+        if (!JSON_MODE) {
+          const label = result.title.length > 50 ? result.title.slice(0, 50) + '...' : result.title;
+          log(`  [${i + 1}/${sessions.length}] ${label}`);
+        }
+      }
+
+      if (!DRY_RUN && !JSON_MODE && ((i + 1) % 5 === 0 || i + 1 === sessions.length)) {
+        await updateBatchProgress(apiUrl, apiKey, batchId, {
+          status: 'summarizing',
+          summarized_count: i + 1,
+        });
+      }
+    }
+  }
+
   await finalizeBatchProgress(apiUrl, apiKey, batchId, {
     status: 'ready',
     session_count: uploadedCount,
