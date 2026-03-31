@@ -47,8 +47,77 @@ function log(msg) {
   process.stderr.write(msg + '\n');
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function parseRetryAfterMs(response) {
+  const header = response.headers.get('retry-after');
+  if (!header) return null;
+
+  const seconds = Number(header);
+  if (Number.isFinite(seconds) && seconds > 0) {
+    return seconds * 1000;
+  }
+
+  const dateMs = Date.parse(header);
+  if (!Number.isNaN(dateMs)) {
+    return Math.max(dateMs - Date.now(), 0);
+  }
+
+  return null;
+}
+
+function computeBackoffMs(attempt, response) {
+  const retryAfterMs = response ? parseRetryAfterMs(response) : null;
+  if (retryAfterMs !== null) {
+    return retryAfterMs + Math.floor(Math.random() * 500);
+  }
+
+  const baseMs = Math.min(1000 * (2 ** attempt), 15000);
+  return baseMs + Math.floor(Math.random() * 500);
+}
+
+async function fetchWithRetry(url, options, retryOptions = {}) {
+  const {
+    maxRetries = 4,
+    retryStatuses = [429, 502, 503, 504],
+    label = 'request',
+  } = retryOptions;
+
+  let lastError = null;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    let response = null;
+    try {
+      response = await fetch(url, options);
+      if (!retryStatuses.includes(response.status)) {
+        return response;
+      }
+
+      lastError = new Error(`${label} failed with HTTP ${response.status}`);
+      if (attempt === maxRetries) {
+        return response;
+      }
+
+      const delayMs = computeBackoffMs(attempt, response);
+      log(`  ${label} rate-limited, retrying in ${Math.ceil(delayMs / 1000)}s...`);
+      await sleep(delayMs);
+    } catch (err) {
+      lastError = err;
+      if (attempt === maxRetries) throw err;
+
+      const delayMs = computeBackoffMs(attempt, null);
+      log(`  ${label} failed (${err.message}), retrying in ${Math.ceil(delayMs / 1000)}s...`);
+      await sleep(delayMs);
+    }
+  }
+
+  throw lastError || new Error(`${label} failed`);
+}
+
 async function startBatch(apiUrl, apiKey) {
-  const response = await fetch(`${apiUrl}/api/backfill/start`, {
+  const response = await fetchWithRetry(`${apiUrl}/api/backfill/start`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -56,6 +125,9 @@ async function startBatch(apiUrl, apiKey) {
     },
     body: JSON.stringify({ days_scanned: DAYS }),
     signal: AbortSignal.timeout(30000),
+  }, {
+    maxRetries: 2,
+    label: 'start batch',
   });
 
   if (!response.ok) {
@@ -75,7 +147,7 @@ async function updateBatchProgress(apiUrl, apiKey, batchId, update) {
   if (!batchId) return;
 
   try {
-    await fetch(`${apiUrl}/api/backfill/progress`, {
+    await fetchWithRetry(`${apiUrl}/api/backfill/progress`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -83,6 +155,9 @@ async function updateBatchProgress(apiUrl, apiKey, batchId, update) {
       },
       body: JSON.stringify({ batch_id: batchId, ...update }),
       signal: AbortSignal.timeout(15000),
+    }, {
+      maxRetries: 2,
+      label: 'progress update',
     });
   } catch {
     // Progress updates are best-effort so local scanning never blocks on them.
@@ -95,7 +170,7 @@ async function finalizeBatchProgress(apiUrl, apiKey, batchId, update) {
   let lastError = null;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const response = await fetch(`${apiUrl}/api/backfill/progress`, {
+      const response = await fetchWithRetry(`${apiUrl}/api/backfill/progress`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -103,6 +178,9 @@ async function finalizeBatchProgress(apiUrl, apiKey, batchId, update) {
         },
         body: JSON.stringify({ batch_id: batchId, ...update }),
         signal: AbortSignal.timeout(15000),
+      }, {
+        maxRetries: 4,
+        label: 'final progress update',
       });
       if (response.ok) return;
       lastError = new Error(`HTTP ${response.status}`);
@@ -119,7 +197,7 @@ async function finalizeBatchProgress(apiUrl, apiKey, batchId, update) {
 }
 
 async function updateBuildSummary(apiUrl, apiKey, batchId, session) {
-  const response = await fetch(`${apiUrl}/api/backfill/summary`, {
+  const response = await fetchWithRetry(`${apiUrl}/api/backfill/summary`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -132,11 +210,43 @@ async function updateBuildSummary(apiUrl, apiKey, batchId, session) {
       summary: session.summary,
     }),
     signal: AbortSignal.timeout(30000),
+  }, {
+    maxRetries: 4,
+    label: 'summary update',
   });
 
   if (!response.ok) {
     const body = await response.text();
-    throw new Error(`Failed to update summary (HTTP ${response.status}): ${body}`);
+    const err = new Error(`Failed to update summary (HTTP ${response.status}): ${body}`);
+    err.statusCode = response.status;
+    throw err;
+  }
+}
+
+async function updateBuildSummaryStatus(apiUrl, apiKey, batchId, sessionId, status, errorCode) {
+  const response = await fetchWithRetry(`${apiUrl}/api/backfill/summary`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      batch_id: batchId,
+      session_id: sessionId,
+      status,
+      error_code: errorCode || null,
+    }),
+    signal: AbortSignal.timeout(30000),
+  }, {
+    maxRetries: 2,
+    label: 'summary status update',
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    const err = new Error(`Failed to update summary status (HTTP ${response.status}): ${body}`);
+    err.statusCode = response.status;
+    throw err;
   }
 }
 
@@ -371,7 +481,18 @@ function parseSession(jsonlPath) {
  */
 function generateSummary(session) {
   let compactLog = session._compact_log || '';
-  if (!compactLog) return null;
+  if (!compactLog) {
+    return {
+      title: generateFallbackTitle(
+        session.prompt_count, session.build_time_seconds,
+        session.project_name, session._tool_summary_str
+      ),
+      summary: generateFallbackSummary(
+        session.prompt_count, session.build_time_seconds,
+        session.total_tokens, session.model, session._tool_summary_str
+      ),
+    };
+  }
 
   // Truncate to ~4000 chars
   if (compactLog.length > 4000) {
@@ -439,7 +560,7 @@ async function uploadBatch(sessions, apiUrl, apiKey, batchId) {
     });
 
     try {
-      const response = await fetch(`${apiUrl}/api/backfill/upload`, {
+      const response = await fetchWithRetry(`${apiUrl}/api/backfill/upload`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -447,6 +568,9 @@ async function uploadBatch(sessions, apiUrl, apiKey, batchId) {
         },
         body: JSON.stringify({ batch_id: batchId, days_scanned: DAYS, sessions: cleaned }),
         signal: AbortSignal.timeout(30000),
+      }, {
+        maxRetries: 5,
+        label: 'backfill upload',
       });
 
       if (!response.ok) {
@@ -467,9 +591,9 @@ async function uploadBatch(sessions, apiUrl, apiKey, batchId) {
       throw err;
     }
 
-    // Brief pause between chunks for rate limiting
+    // Brief pause between chunks smooths burstiness even with server-side retries.
     if (i + chunkSize < sessions.length) {
-      await new Promise(r => setTimeout(r, 2000));
+      await sleep(1000);
     }
   }
 
@@ -611,6 +735,8 @@ async function main() {
   });
 
   const uploadedCount = await uploadBatch(sessions, apiUrl, apiKey, batchId);
+  let summarizedCount = 0;
+  let summaryFailures = 0;
   if (GENERATE_SUMMARIES && uploadedCount > 0) {
     await updateBatchProgress(apiUrl, apiKey, batchId, {
       status: 'summarizing',
@@ -627,17 +753,33 @@ async function main() {
       if (result) {
         s.title = result.title;
         s.summary = result.summary;
-        await updateBuildSummary(apiUrl, apiKey, batchId, s);
-        if (!JSON_MODE) {
-          const label = result.title.length > 50 ? result.title.slice(0, 50) + '...' : result.title;
-          log(`  [${i + 1}/${sessions.length}] ${label}`);
+        try {
+          await updateBuildSummary(apiUrl, apiKey, batchId, s);
+          summarizedCount++;
+          if (!JSON_MODE) {
+            const label = result.title.length > 50 ? result.title.slice(0, 50) + '...' : result.title;
+            log(`  [${i + 1}/${sessions.length}] ${label}`);
+          }
+        } catch (err) {
+          if (err.statusCode === 404) {
+            log(`  Summary skipped for ${s.session_id.slice(0, 8)}...: no draft row in this batch`);
+          } else {
+            summaryFailures++;
+            try {
+              await updateBuildSummaryStatus(apiUrl, apiKey, batchId, s.session_id, 'patch_failed', 'summary_update_failed');
+            } catch (statusErr) {
+              log(`  Failed to mark summary error for ${s.session_id.slice(0, 8)}...: ${statusErr.message}`);
+            }
+            log(`  Summary update failed for ${s.session_id.slice(0, 8)}...: ${err.message}`);
+          }
         }
       }
 
       if (!DRY_RUN && !JSON_MODE && ((i + 1) % 5 === 0 || i + 1 === sessions.length)) {
         await updateBatchProgress(apiUrl, apiKey, batchId, {
           status: 'summarizing',
-          summarized_count: i + 1,
+          summarized_count: summarizedCount,
+          error_count: summaryFailures,
         });
       }
     }
@@ -648,7 +790,8 @@ async function main() {
     session_count: uploadedCount,
     candidate_count: sessions.length,
     skipped_count: skipped,
-    summarized_count: GENERATE_SUMMARIES ? sessions.length : 0,
+    summarized_count: GENERATE_SUMMARIES ? summarizedCount : 0,
+    error_count: summaryFailures,
     finished_at: new Date().toISOString(),
   });
   log(`Batch ${batchId}: ${uploadedCount} sessions uploaded`);
