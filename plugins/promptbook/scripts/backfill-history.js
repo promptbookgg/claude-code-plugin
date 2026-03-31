@@ -199,33 +199,14 @@ function parseSession(jsonlPath) {
   if (transcript.error) return null;
   if (!transcript.model) return null;
 
-  const totalTokens = transcript.total_tokens || 0;
-
-  // Skip noise (same filter as session-end.js)
-  if (promptCount === 0 && buildTimeSeconds < 10 && totalTokens < 1000) return null;
-  if (totalTokens === 0 && promptCount === 0) return null;
-
-  // Count lines changed (same logic as track-edits.js)
-  const linesChanged = countLinesChanged(jsonlPath);
-
-  // Language detection using shared lib (same as session-end.js)
-  const fileExtensions = transcript.source_metadata?.file_extensions || {};
-  const language = getPrimaryLanguage(fileExtensions);
-
-  // Tool summary for fallback title generation
-  const toolSummary = transcript.tool_usage_summary || {};
-  const toolSummaryStr = Object.entries(toolSummary)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 3)
-    .map(([k, v]) => `${v} ${k}`)
-    .join(', ');
-
-  // Aggregate subagent tokens (same as session-end.js)
-  let sessionTotalTokens = totalTokens;
+  // Aggregate subagent tokens before noise filter (same as session-end.js)
+  let sessionTotalTokens = transcript.total_tokens || 0;
   let sessionInputTokens = transcript.input_tokens || 0;
   let sessionOutputTokens = transcript.output_tokens || 0;
   let sessionCacheCreation = transcript.cache_creation_input_tokens || 0;
   let sessionCacheRead = transcript.cache_read_input_tokens || 0;
+  const fileExtensions = transcript.source_metadata?.file_extensions || {};
+  const toolSummary = transcript.tool_usage_summary || {};
   const sourceMetadata = {
     file_extensions: fileExtensions,
     tool_usage_summary: toolSummary,
@@ -243,6 +224,23 @@ function parseSession(jsonlPath) {
       sourceMetadata.subagent_tokens = subagentData.subagent_tokens;
     }
   } catch { /* skip subagent aggregation errors */ }
+
+  // Skip noise (same filter as session-end.js) — uses aggregated totals
+  if (promptCount === 0 && buildTimeSeconds < 10 && sessionTotalTokens < 1000) return null;
+  if (sessionTotalTokens === 0 && promptCount === 0) return null;
+
+  // Count lines changed (same logic as track-edits.js)
+  const linesChanged = countLinesChanged(jsonlPath);
+
+  // Language detection using shared lib (same as session-end.js)
+  const language = getPrimaryLanguage(fileExtensions);
+
+  // Tool summary for fallback title generation
+  const toolSummaryStr = Object.entries(toolSummary)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([k, v]) => `${v} ${k}`)
+    .join(', ');
 
   return {
     session_id: sessionId,

@@ -83,8 +83,6 @@ What is sent to promptbook.gg: session ID, project name, model, timestamps, prom
    ```bash
    node <path-to-backfill-history.js> \
      --days 90 \
-     --api-url "https://promptbook.gg" \
-     --api-key "<api_key from step 4>" \
      --generate-summaries
    ```
    The script scans local JSONL transcripts and uploads aggregate stats (never code or prompts). It outputs a batch ID on stdout.
