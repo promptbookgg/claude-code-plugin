@@ -46,12 +46,25 @@ async function main() {
   const timestamp = new Date().toISOString();
   const projectName = deriveProjectName(cwd);
 
+  // Capture git branch (useful for grouping worktree/parallel sessions)
+  let gitBranch = null;
+  if (cwd) {
+    try {
+      const { execSync } = require('child_process');
+      gitBranch = execSync('git rev-parse --abbrev-ref HEAD', {
+        cwd, encoding: 'utf8', timeout: 2000, stdio: ['pipe', 'pipe', 'pipe'],
+      }).trim() || null;
+    } catch { /* not a git repo or git not available */ }
+  }
+
   // Write session file
   const session = {
     session_id: sessionId,
     project_name: projectName,
     model,
     ai_tool: 'claude-code',
+    agent_type: input.agent_type || null,
+    git_branch: gitBranch,
     start_time: timestamp,
     end_time: null,
     build_time_seconds: null,
