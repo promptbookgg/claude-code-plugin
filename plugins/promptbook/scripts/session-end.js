@@ -13,7 +13,7 @@ const path = require('path');
 const { spawn } = require('child_process');
 const { getDataDir, readStdin, readConfig, acquireLock, releaseLock, atomicWrite, appendLog, isValidSessionId } = require('./lib/io');
 const { getPrimaryLanguage } = require('./lib/language');
-const { parseTranscript } = require('./lib/transcript');
+const { parseTranscript, parseSubagentTokens } = require('./lib/transcript');
 
 const DATA_DIR = getDataDir();
 const SCRIPTS_DIR = process.env.CLAUDE_PLUGIN_ROOT
@@ -86,6 +86,29 @@ try {
         session.files_touched = transcriptData.files_touched || [];
         session.tool_usage_summary = transcriptData.tool_usage_summary || {};
         session.source_metadata = transcriptData.source_metadata;
+      }
+    }
+
+    // Aggregate subagent tokens into parent build
+    if (transcriptPath) {
+      try {
+        const subagentData = parseSubagentTokens(transcriptPath);
+        if (subagentData) {
+          session.total_tokens = (session.total_tokens || 0) + subagentData.subagent_tokens;
+          session.input_tokens = (session.input_tokens || 0) + subagentData.input_tokens;
+          session.output_tokens = (session.output_tokens || 0) + subagentData.output_tokens;
+          session.cache_creation_input_tokens = (session.cache_creation_input_tokens || 0) + subagentData.cache_creation_input_tokens;
+          session.cache_read_input_tokens = (session.cache_read_input_tokens || 0) + subagentData.cache_read_input_tokens;
+          session.subagent_count = subagentData.subagent_count;
+          session.subagent_tokens = subagentData.subagent_tokens;
+          // Include in source_metadata so it persists in the DB JSONB column
+          if (session.source_metadata) {
+            session.source_metadata.subagent_count = subagentData.subagent_count;
+            session.source_metadata.subagent_tokens = subagentData.subagent_tokens;
+          }
+        }
+      } catch (err) {
+        appendLog(DATA_DIR, 'parse-errors.log', `subagent-aggregation: ${err.message}`);
       }
     }
 

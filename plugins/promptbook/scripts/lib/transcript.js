@@ -291,4 +291,63 @@ function parseTranscript(transcriptPath, cwd = '', compactOnly = false) {
   return result;
 }
 
-module.exports = { parseTranscript, sanitizePath };
+/**
+ * Parse all subagent transcripts next to a parent session and return aggregate token counts.
+ * Subagent transcripts live at {projectDir}/{sessionId}/subagents/agent-*.jsonl
+ *
+ * @param {string} transcriptPath - Parent transcript path (e.g. ~/.claude/projects/{proj}/{sessionId}.jsonl)
+ * @returns {{ subagent_count, subagent_tokens, input_tokens, output_tokens, cache_creation_input_tokens, cache_read_input_tokens } | null}
+ */
+function parseSubagentTokens(transcriptPath) {
+  if (!transcriptPath) return null;
+
+  // Derive subagents dir: /path/to/{sessionId}.jsonl → /path/to/{sessionId}/subagents/
+  const sessionId = path.basename(transcriptPath, '.jsonl');
+  const subagentsDir = path.join(path.dirname(transcriptPath), sessionId, 'subagents');
+
+  if (!fs.existsSync(subagentsDir)) return null;
+
+  let files;
+  try {
+    files = fs.readdirSync(subagentsDir).filter(f => f.endsWith('.jsonl'));
+  } catch { return null; }
+
+  if (files.length === 0) return null;
+
+  let totalInput = 0;
+  let totalOutput = 0;
+  let totalCacheCreation = 0;
+  let totalCacheRead = 0;
+
+  for (const file of files) {
+    try {
+      const content = fs.readFileSync(path.join(subagentsDir, file), 'utf8');
+      for (const line of content.split('\n')) {
+        if (!line.trim()) continue;
+        let entry;
+        try { entry = JSON.parse(line); } catch { continue; }
+        if (entry.type !== 'assistant') continue;
+        const usage = (entry.message || {}).usage;
+        if (!usage) continue;
+        totalInput += usage.input_tokens || 0;
+        totalOutput += usage.output_tokens || 0;
+        totalCacheCreation += usage.cache_creation_input_tokens || 0;
+        totalCacheRead += usage.cache_read_input_tokens || 0;
+      }
+    } catch { /* skip corrupted files */ }
+  }
+
+  const subagentTokens = totalInput + totalCacheCreation + totalOutput;
+  if (subagentTokens === 0) return null;
+
+  return {
+    subagent_count: files.length,
+    subagent_tokens: subagentTokens,
+    input_tokens: totalInput,
+    output_tokens: totalOutput,
+    cache_creation_input_tokens: totalCacheCreation,
+    cache_read_input_tokens: totalCacheRead,
+  };
+}
+
+module.exports = { parseTranscript, parseSubagentTokens, sanitizePath };
