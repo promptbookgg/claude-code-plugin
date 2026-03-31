@@ -1,22 +1,20 @@
 #!/usr/bin/env node
 /**
  * Promptbook — SessionStart hook.
- * Creates a new session tracking file and injects recent session context.
+ * Creates a new session tracking file.
  *
  * Input (stdin JSON): { session_id, model, cwd, hook_event_name }
- * Output (stdout): Recent session summaries (injected as Claude Code context)
- * Output (stderr): Notification message (shown in terminal)
  */
 'use strict';
 
 const fs = require('fs');
 const path = require('path');
-const { getDataDir, readStdin, readConfig, appendLog, isValidSessionId } = require('./lib/io');
+const { getDataDir, readStdin, appendLog, isValidSessionId } = require('./lib/io');
 const { deriveProjectName } = require('./lib/language');
 
 const DATA_DIR = getDataDir();
 
-async function main() {
+function main() {
   // Skip if this session was spawned by our own summary generation
   if (process.env.PROMPTBOOK_SKIP_HOOKS === '1') return;
 
@@ -77,44 +75,10 @@ async function main() {
 
   const sessionFile = path.join(sessionsDir, `${sessionId}.json`);
   fs.writeFileSync(sessionFile, JSON.stringify(session, null, 2), 'utf8');
-
-  // --- Session context injection ---
-  // Fetch recent session summaries from Promptbook API and print to stdout.
-  // Claude Code injects stdout from SessionStart hooks as conversation context.
-  // Fails silently — if the API is unreachable, Claude Code works normally.
-  const config = readConfig();
-  if (config && config.api_key && config.api_url) {
-    const encodedProject = encodeURIComponent(projectName);
-    const url = `${config.api_url}/api/hooks/session-context?project_name=${encodedProject}`;
-
-    try {
-      const res = await fetch(url, {
-        headers: { Authorization: `Bearer ${config.api_key}` },
-        signal: AbortSignal.timeout(2000),
-      });
-
-      if (res.ok) {
-        const context = await res.text();
-        if (context) {
-          const firstLine = context.split('\n')[0];
-          if (firstLine && firstLine.startsWith('##')) {
-            // stdout: injected as conversation context by Claude Code
-            process.stdout.write(`## Promptbook — here is what was built recently on ${projectName}\n\n`);
-            const rest = context.split('\n').slice(1).join('\n');
-            process.stdout.write(rest + '\n');
-
-            // stderr: visible notification (not injected as context)
-            const sessionCount = (context.match(/^### /gm) || []).length;
-            process.stderr.write(`[promptbook] ${sessionCount} recent session(s) loaded as context\n`);
-          }
-        }
-      }
-    } catch {
-      // Silent failure — Claude Code works normally without context
-    }
-  }
 }
 
-main().catch(err => {
+try {
+  main();
+} catch (err) {
   appendLog(DATA_DIR, 'hook-errors.log', `UNCAUGHT session-start: ${err.message}`);
-});
+}

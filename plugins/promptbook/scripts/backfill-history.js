@@ -10,7 +10,7 @@
  * Usage:
  *   node backfill-history.js [--days N] [--dry-run] [--json] [--project DIR]
  *                            [--before DATE] [--generate-summaries]
- *                            [--api-url URL] [--api-key KEY]
+ *                            [--api-url URL]
  */
 'use strict';
 
@@ -37,7 +37,6 @@ const PROJECT_FILTER = getArg('project', '');
 const BEFORE = getArg('before', '');
 const GENERATE_SUMMARIES = getArg('generate-summaries', false);
 const API_URL_ARG = getArg('api-url', '');
-const API_KEY_ARG = getArg('api-key', '');
 
 // --- Helpers ---
 function log(msg) {
@@ -365,19 +364,22 @@ async function uploadBatch(sessions, apiUrl, apiKey) {
 async function main() {
   // Load config
   let apiUrl = API_URL_ARG;
-  let apiKey = API_KEY_ARG;
+  let apiKey = '';
   const needsConfig = !DRY_RUN && !JSON_MODE;
 
-  if (needsConfig && !apiUrl) {
+  if (needsConfig || !apiUrl) {
     const configPath = path.join(os.homedir(), '.promptbook', 'config.json');
     if (!fs.existsSync(configPath)) {
-      log('Error: ~/.promptbook/config.json not found. Run the Promptbook setup first.');
-      process.exit(1);
+      if (needsConfig) {
+        log('Error: ~/.promptbook/config.json not found. Run the Promptbook setup first.');
+        process.exit(1);
+      }
+    } else {
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      apiUrl = apiUrl || config.api_url || '';
+      apiKey = config.api_key || '';
     }
-    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-    apiUrl = apiUrl || config.api_url || '';
-    apiKey = apiKey || config.api_key || '';
-    if (!apiUrl || !apiKey) {
+    if (needsConfig && (!apiUrl || !apiKey)) {
       log('Error: config.json missing api_url or api_key');
       process.exit(1);
     }

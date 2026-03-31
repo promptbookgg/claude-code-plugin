@@ -102,10 +102,11 @@ try {
           session.subagent_count = subagentData.subagent_count;
           session.subagent_tokens = subagentData.subagent_tokens;
           // Include in source_metadata so it persists in the DB JSONB column
-          if (session.source_metadata) {
-            session.source_metadata.subagent_count = subagentData.subagent_count;
-            session.source_metadata.subagent_tokens = subagentData.subagent_tokens;
+          if (!session.source_metadata || typeof session.source_metadata !== 'object') {
+            session.source_metadata = {};
           }
+          session.source_metadata.subagent_count = subagentData.subagent_count;
+          session.source_metadata.subagent_tokens = subagentData.subagent_tokens;
         }
       } catch (err) {
         appendLog(DATA_DIR, 'parse-errors.log', `subagent-aggregation: ${err.message}`);
@@ -162,6 +163,7 @@ try {
       process.exit(0);
     }
     const child = spawn('node', [submitScript], {
+      detached: true,
       stdio: 'ignore',
       env: {
         ...process.env,
