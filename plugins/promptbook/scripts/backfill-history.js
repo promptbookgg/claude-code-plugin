@@ -18,7 +18,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { execSync, execFileSync } = require('child_process');
-const { parseTranscript } = require('./lib/transcript');
+const { parseTranscript, parseSubagentTokens } = require('./lib/transcript');
 const { getPrimaryLanguage, deriveProjectName } = require('./lib/language');
 const { buildSummaryPrompt, generateFallbackTitle, generateFallbackSummary } = require('./lib/summary');
 
@@ -220,6 +220,30 @@ function parseSession(jsonlPath) {
     .map(([k, v]) => `${v} ${k}`)
     .join(', ');
 
+  // Aggregate subagent tokens (same as session-end.js)
+  let sessionTotalTokens = totalTokens;
+  let sessionInputTokens = transcript.input_tokens || 0;
+  let sessionOutputTokens = transcript.output_tokens || 0;
+  let sessionCacheCreation = transcript.cache_creation_input_tokens || 0;
+  let sessionCacheRead = transcript.cache_read_input_tokens || 0;
+  const sourceMetadata = {
+    file_extensions: fileExtensions,
+    tool_usage_summary: toolSummary,
+  };
+
+  try {
+    const subagentData = parseSubagentTokens(jsonlPath);
+    if (subagentData) {
+      sessionTotalTokens += subagentData.subagent_tokens;
+      sessionInputTokens += subagentData.input_tokens;
+      sessionOutputTokens += subagentData.output_tokens;
+      sessionCacheCreation += subagentData.cache_creation_input_tokens;
+      sessionCacheRead += subagentData.cache_read_input_tokens;
+      sourceMetadata.subagent_count = subagentData.subagent_count;
+      sourceMetadata.subagent_tokens = subagentData.subagent_tokens;
+    }
+  } catch { /* skip subagent aggregation errors */ }
+
   return {
     session_id: sessionId,
     project_name: projectName,
@@ -232,16 +256,13 @@ function parseSession(jsonlPath) {
     lines_changed: linesChanged || null,
     language,
     status: 'completed',
-    total_tokens: totalTokens,
-    input_tokens: transcript.input_tokens || 0,
-    output_tokens: transcript.output_tokens || 0,
-    cache_creation_input_tokens: transcript.cache_creation_input_tokens || 0,
-    cache_read_input_tokens: transcript.cache_read_input_tokens || 0,
+    total_tokens: sessionTotalTokens,
+    input_tokens: sessionInputTokens,
+    output_tokens: sessionOutputTokens,
+    cache_creation_input_tokens: sessionCacheCreation,
+    cache_read_input_tokens: sessionCacheRead,
     source: 'backfill',
-    source_metadata: {
-      file_extensions: fileExtensions,
-      tool_usage_summary: toolSummary,
-    },
+    source_metadata: sourceMetadata,
     // Kept locally for summary generation — stripped before upload
     _compact_log: transcript.compact_log || '',
     _tool_summary_str: toolSummaryStr,
