@@ -119,6 +119,10 @@ async function submitBuild(sessionFilePath) {
       let parsed = {};
       try { parsed = JSON.parse(body); } catch { /* ignore */ }
       const buildId = isValidBuildId(parsed.id) ? parsed.id : '';
+      if (!buildId) {
+        appendLog(DATA_DIR, 'submit.log', `WARN: 201 but missing/invalid build ID — will retry`);
+        return { ok: false, status: 201 };
+      }
       return {
         ok: true,
         buildId,
