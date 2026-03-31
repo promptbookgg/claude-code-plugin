@@ -37,10 +37,85 @@ const PROJECT_FILTER = getArg('project', '');
 const BEFORE = getArg('before', '');
 const GENERATE_SUMMARIES = getArg('generate-summaries', false);
 const API_URL_ARG = getArg('api-url', '');
+const BATCH_ID_ARG = getArg('batch-id', '');
+let currentApiUrl = API_URL_ARG;
+let currentApiKey = '';
+let currentBatchId = BATCH_ID_ARG;
 
 // --- Helpers ---
 function log(msg) {
   process.stderr.write(msg + '\n');
+}
+
+async function startBatch(apiUrl, apiKey) {
+  const response = await fetch(`${apiUrl}/api/backfill/start`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({ days_scanned: DAYS }),
+    signal: AbortSignal.timeout(30000),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Failed to start backfill (HTTP ${response.status}): ${body}`);
+  }
+
+  const body = await response.json();
+  if (!body.batch_id || typeof body.batch_id !== 'string') {
+    throw new Error('Failed to start backfill: missing batch_id');
+  }
+
+  return body.batch_id;
+}
+
+async function updateBatchProgress(apiUrl, apiKey, batchId, update) {
+  if (!batchId) return;
+
+  try {
+    await fetch(`${apiUrl}/api/backfill/progress`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({ batch_id: batchId, ...update }),
+      signal: AbortSignal.timeout(15000),
+    });
+  } catch {
+    // Progress updates are best-effort so local scanning never blocks on them.
+  }
+}
+
+async function finalizeBatchProgress(apiUrl, apiKey, batchId, update) {
+  if (!batchId) return;
+
+  let lastError = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const response = await fetch(`${apiUrl}/api/backfill/progress`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({ batch_id: batchId, ...update }),
+        signal: AbortSignal.timeout(15000),
+      });
+      if (response.ok) return;
+      lastError = new Error(`HTTP ${response.status}`);
+    } catch (err) {
+      lastError = err;
+    }
+
+    if (attempt < 2) {
+      await new Promise(r => setTimeout(r, 1000));
+    }
+  }
+
+  throw lastError || new Error('Failed to finalize backfill progress');
 }
 
 /**
@@ -328,9 +403,9 @@ function generateSummary(session) {
 /**
  * Upload sessions to the backfill batch endpoint.
  */
-async function uploadBatch(sessions, apiUrl, apiKey) {
+async function uploadBatch(sessions, apiUrl, apiKey, batchId) {
   const chunkSize = 50;
-  let batchId = null;
+  let uploadedCount = 0;
 
   for (let i = 0; i < sessions.length; i += chunkSize) {
     const chunk = sessions.slice(i, i + chunkSize);
@@ -348,7 +423,7 @@ async function uploadBatch(sessions, apiUrl, apiKey) {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${apiKey}`,
         },
-        body: JSON.stringify({ days_scanned: DAYS, sessions: cleaned }),
+        body: JSON.stringify({ batch_id: batchId, days_scanned: DAYS, sessions: cleaned }),
         signal: AbortSignal.timeout(30000),
       });
 
@@ -357,17 +432,17 @@ async function uploadBatch(sessions, apiUrl, apiKey) {
         log(`  Upload failed (HTTP ${response.status}): ${body}`);
         if ([401, 403, 500].includes(response.status)) {
           log('  Stopping due to server error.');
-          break;
+          throw new Error(`Upload failed with HTTP ${response.status}`);
         }
-        continue;
+        throw new Error(`Upload failed with HTTP ${response.status}`);
       }
 
       const body = await response.json();
-      if (!batchId) batchId = body.batch_id;
+      uploadedCount += body.uploaded || 0;
       log(`  Uploaded ${body.uploaded || 0} sessions (${body.duplicates || 0} duplicates)`);
     } catch (err) {
       log(`  Upload failed: ${err.message}`);
-      break;
+      throw err;
     }
 
     // Brief pause between chunks for rate limiting
@@ -376,7 +451,7 @@ async function uploadBatch(sessions, apiUrl, apiKey) {
     }
   }
 
-  return batchId;
+  return uploadedCount;
 }
 
 // --- Main ---
@@ -384,6 +459,7 @@ async function main() {
   // Load config
   let apiUrl = API_URL_ARG;
   let apiKey = '';
+  let batchId = BATCH_ID_ARG;
   const needsConfig = !DRY_RUN && !JSON_MODE;
 
   if (needsConfig || !apiUrl) {
@@ -404,12 +480,48 @@ async function main() {
     }
   }
 
+  currentApiUrl = apiUrl;
+  currentApiKey = apiKey;
+
+  if (!DRY_RUN && !JSON_MODE) {
+    batchId = batchId || await startBatch(apiUrl, apiKey);
+    currentBatchId = batchId;
+    await updateBatchProgress(apiUrl, apiKey, batchId, { status: 'scanning' });
+  }
+
   // Find sessions
   if (!JSON_MODE) log(`Scanning for sessions from the last ${DAYS} days...`);
   const jsonlFiles = findJsonlFiles();
   if (!JSON_MODE) log(`Found ${jsonlFiles.length} session files`);
+  if (!DRY_RUN && !JSON_MODE) {
+    await updateBatchProgress(apiUrl, apiKey, batchId, {
+      status: 'scanning',
+      found_count: jsonlFiles.length,
+    });
+  }
 
   if (jsonlFiles.length === 0) {
+    if (!DRY_RUN && !JSON_MODE) {
+      await updateBatchProgress(apiUrl, apiKey, batchId, {
+        status: 'ready',
+        found_count: 0,
+        candidate_count: 0,
+        session_count: 0,
+        skipped_count: 0,
+        summarized_count: 0,
+        finished_at: new Date().toISOString(),
+      });
+      await finalizeBatchProgress(apiUrl, apiKey, batchId, {
+        status: 'ready',
+        found_count: 0,
+        candidate_count: 0,
+        session_count: 0,
+        skipped_count: 0,
+        summarized_count: 0,
+        finished_at: new Date().toISOString(),
+      });
+      process.stdout.write(batchId);
+    }
     if (JSON_MODE) process.stdout.write('[]');
     else log('Nothing to backfill.');
     return;
@@ -425,6 +537,14 @@ async function main() {
   }
 
   if (!JSON_MODE) log(`Parsed ${sessions.length} sessions (${skipped} skipped)`);
+  if (!DRY_RUN && !JSON_MODE) {
+    await updateBatchProgress(apiUrl, apiKey, batchId, {
+      status: GENERATE_SUMMARIES && sessions.length > 0 ? 'summarizing' : 'uploading',
+      candidate_count: sessions.length,
+      skipped_count: skipped,
+      summarized_count: 0,
+    });
+  }
 
   // Generate summaries if requested
   if (GENERATE_SUMMARIES && sessions.length > 0) {
@@ -439,6 +559,12 @@ async function main() {
           const label = result.title.length > 50 ? result.title.slice(0, 50) + '...' : result.title;
           log(`  [${i + 1}/${sessions.length}] ${label}`);
         }
+      }
+      if (!DRY_RUN && !JSON_MODE && ((i + 1) % 5 === 0 || i + 1 === sessions.length)) {
+        await updateBatchProgress(apiUrl, apiKey, batchId, {
+          status: 'summarizing',
+          summarized_count: i + 1,
+        });
       }
     }
   }
@@ -467,21 +593,46 @@ async function main() {
 
   // Upload
   if (sessions.length === 0) {
+    await finalizeBatchProgress(apiUrl, apiKey, batchId, {
+      status: 'ready',
+      session_count: 0,
+      candidate_count: 0,
+      skipped_count: skipped,
+      summarized_count: 0,
+      finished_at: new Date().toISOString(),
+    });
+    process.stdout.write(batchId);
     log('No sessions to upload.');
     return;
   }
 
-  const batchId = await uploadBatch(sessions, apiUrl, apiKey);
-  if (batchId) {
-    log(`Batch ${batchId}: ${sessions.length} sessions uploaded`);
-    process.stdout.write(batchId); // stdout: just the batch_id for script consumption
-  } else {
-    log('Upload failed — no batch created.');
-    process.exit(1);
-  }
+  await updateBatchProgress(apiUrl, apiKey, batchId, {
+    status: 'uploading',
+    summarized_count: GENERATE_SUMMARIES ? sessions.length : 0,
+  });
+
+  const uploadedCount = await uploadBatch(sessions, apiUrl, apiKey, batchId);
+  await finalizeBatchProgress(apiUrl, apiKey, batchId, {
+    status: 'ready',
+    session_count: uploadedCount,
+    candidate_count: sessions.length,
+    skipped_count: skipped,
+    summarized_count: GENERATE_SUMMARIES ? sessions.length : 0,
+    finished_at: new Date().toISOString(),
+  });
+  log(`Batch ${batchId}: ${uploadedCount} sessions uploaded`);
+  process.stdout.write(batchId);
 }
 
 main().catch(err => {
+  if (currentApiUrl && currentApiKey && currentBatchId) {
+    void finalizeBatchProgress(currentApiUrl, currentApiKey, currentBatchId, {
+      status: 'failed',
+      error_count: 1,
+      last_error: err.message,
+      finished_at: new Date().toISOString(),
+    }).catch(() => {});
+  }
   log(`Fatal: ${err.message}`);
   process.exit(1);
 });

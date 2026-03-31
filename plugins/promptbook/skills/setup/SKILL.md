@@ -79,14 +79,18 @@ What is sent to promptbook.gg: session ID, project name, model, timestamps, prom
    done
    ```
 
-   Then run it:
+   Then start it in the background:
    ```bash
-   node <path-to-backfill-history.js> \
+   nohup node <path-to-backfill-history.js> \
      --days 90 \
-     --generate-summaries
+     --generate-summaries \
+     > "$HOME/.promptbook/backfill-history.log" 2>&1 < /dev/null &
    ```
-   The script scans local JSONL transcripts and uploads aggregate stats (never code or prompts). It outputs a batch ID on stdout.
-   If the batch ID is returned, tell the user: "Sessions uploaded! Review and import them at https://promptbook.gg/setup/history"
+   Before starting it, count matching JSONL files so you can tell the user roughly how much history was found:
+   ```bash
+   find "$HOME/.claude/projects" -name "*.jsonl" -type f 2>/dev/null | wc -l
+   ```
+   Tell the user: "Found <count> session files. History import started in the background. See status at https://promptbook.gg/setup/history"
    If the user declines, that's fine — they can always run it later.
 
 ## Important
