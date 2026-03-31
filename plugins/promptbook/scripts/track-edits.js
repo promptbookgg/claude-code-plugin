@@ -13,6 +13,9 @@ const { getDataDir, readStdin, acquireLock, releaseLock, atomicWrite, appendLog,
 const DATA_DIR = getDataDir();
 
 try {
+  // Skip if this session was spawned by our own summary generation
+  if (process.env.PROMPTBOOK_SKIP_HOOKS === '1') process.exit(0);
+
   const input = readStdin();
   if (!input || !input.session_id || !isValidSessionId(input.session_id)) process.exit(0);
 

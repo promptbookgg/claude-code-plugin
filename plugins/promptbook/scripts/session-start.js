@@ -17,6 +17,9 @@ const { deriveProjectName } = require('./lib/language');
 const DATA_DIR = getDataDir();
 
 async function main() {
+  // Skip if this session was spawned by our own summary generation
+  if (process.env.PROMPTBOOK_SKIP_HOOKS === '1') return;
+
   const input = readStdin();
   if (!input || !input.session_id || !isValidSessionId(input.session_id)) return;
 
