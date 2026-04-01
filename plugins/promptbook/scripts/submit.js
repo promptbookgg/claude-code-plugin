@@ -387,12 +387,14 @@ function writeToTerminal(msg) {
     fs.closeSync(fd);
     return;
   } catch { /* not Unix or no tty */ }
-  try {
-    const fd = fs.openSync('CON', 'w');
-    fs.writeSync(fd, msg);
-    fs.closeSync(fd);
-    return;
-  } catch { /* not Windows or no console */ }
+  if (process.platform === 'win32') {
+    try {
+      const fd = fs.openSync('CON', 'w');
+      fs.writeSync(fd, msg);
+      fs.closeSync(fd);
+      return;
+    } catch { /* no console */ }
+  }
 }
 
 // --- Main ---

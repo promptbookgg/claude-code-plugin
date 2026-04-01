@@ -42,6 +42,53 @@ let currentApiUrl = API_URL_ARG;
 let currentApiKey = '';
 let currentBatchId = BATCH_ID_ARG;
 
+// --- Checkpoint helpers ---
+const CHECKPOINT_PATH = path.join(os.homedir(), '.promptbook', 'backfill-summary-progress.json');
+
+function loadCheckpoint(batchId) {
+  try {
+    if (!fs.existsSync(CHECKPOINT_PATH)) return new Set();
+    const data = JSON.parse(fs.readFileSync(CHECKPOINT_PATH, 'utf8'));
+    if (data.batch_id !== batchId) return new Set(); // different batch, start fresh
+    return new Set(data.summarized_ids || []);
+  } catch { return new Set(); }
+}
+
+function saveCheckpoint(batchId, summarizedIds) {
+  try {
+    const dir = path.dirname(CHECKPOINT_PATH);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(CHECKPOINT_PATH, JSON.stringify({
+      batch_id: batchId,
+      summarized_ids: [...summarizedIds],
+      updated_at: new Date().toISOString(),
+    }));
+  } catch { /* best effort */ }
+}
+
+function clearCheckpoint() {
+  try { if (fs.existsSync(CHECKPOINT_PATH)) fs.unlinkSync(CHECKPOINT_PATH); } catch { /* ok */ }
+}
+
+// --- Mark sessions as submitted in the live hook's retry queue ---
+function markSessionsSubmitted(sessionIds) {
+  const sessionsDir = path.join(os.homedir(), '.promptbook', 'sessions');
+  if (!fs.existsSync(sessionsDir)) return;
+  let marked = 0;
+  for (const id of sessionIds) {
+    const filePath = path.join(sessionsDir, `${id}.json`);
+    try {
+      if (!fs.existsSync(filePath)) continue;
+      const session = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+      if (session.submitted_at) continue; // already marked
+      session.submitted_at = new Date().toISOString();
+      fs.writeFileSync(filePath, JSON.stringify(session, null, 2));
+      marked++;
+    } catch { /* best effort */ }
+  }
+  if (marked > 0) log(`  Marked ${marked} sessions as submitted in retry queue`);
+}
+
 // --- Helpers ---
 function log(msg) {
   process.stderr.write(msg + '\n');
@@ -655,7 +702,7 @@ async function main() {
   if (jsonlFiles.length === 0) {
     if (!DRY_RUN && !JSON_MODE) {
       await updateBatchProgress(apiUrl, apiKey, batchId, {
-        status: 'ready',
+        status: 'completed',
         found_count: 0,
         candidate_count: 0,
         session_count: 0,
@@ -664,7 +711,7 @@ async function main() {
         finished_at: new Date().toISOString(),
       });
       await finalizeBatchProgress(apiUrl, apiKey, batchId, {
-        status: 'ready',
+        status: 'completed',
         found_count: 0,
         candidate_count: 0,
         session_count: 0,
@@ -683,9 +730,14 @@ async function main() {
   const sessions = [];
   let skipped = 0;
   for (const filePath of jsonlFiles) {
-    const session = parseSession(filePath);
-    if (session) sessions.push(session);
-    else skipped++;
+    try {
+      const session = parseSession(filePath);
+      if (session) sessions.push(session);
+      else skipped++;
+    } catch (err) {
+      skipped++;
+      log(`  Skipped corrupt file ${path.basename(filePath)}: ${err.message}`);
+    }
   }
 
   if (!JSON_MODE) log(`Parsed ${sessions.length} sessions (${skipped} skipped)`);
@@ -723,7 +775,7 @@ async function main() {
   // Upload
   if (sessions.length === 0) {
     await finalizeBatchProgress(apiUrl, apiKey, batchId, {
-      status: 'ready',
+      status: 'completed',
       session_count: 0,
       candidate_count: 0,
       skipped_count: skipped,
@@ -741,24 +793,46 @@ async function main() {
   });
 
   const { uploadedCount, insertedIds } = await uploadBatch(sessions, apiUrl, apiKey, batchId);
+
+  // Mark all uploaded sessions in the live hook's retry queue so they don't
+  // get re-submitted on next session end (which delays the terminal success message)
+  markSessionsSubmitted(sessions.map(s => s.session_id));
+
   let summarizedCount = 0;
   let summaryFailures = 0;
-  if (GENERATE_SUMMARIES && uploadedCount > 0) {
-    // Only summarize sessions that were actually inserted (not duplicates)
+  // Load checkpoint to check for resumable work from a previous crashed run
+  const priorCheckpoint = GENERATE_SUMMARIES ? loadCheckpoint(batchId) : new Set();
+  const hasResumableWork = priorCheckpoint.size > 0;
+
+  if (GENERATE_SUMMARIES && (uploadedCount > 0 || hasResumableWork)) {
+    // On fresh run: only summarize newly inserted sessions (skip duplicates)
+    // On resume: summarize ALL parsed sessions (insertedIds will be empty since they're duplicates)
     const insertedSet = new Set(insertedIds);
-    const toSummarize = sessions.filter(s => insertedSet.has(s.session_id));
+    const toSummarize = hasResumableWork && uploadedCount === 0
+      ? sessions  // resume: try all parsed sessions, checkpoint will skip already-done ones
+      : sessions.filter(s => insertedSet.has(s.session_id));
+
+    // Skip sessions already summarized in a previous run
+    const alreadySummarized = new Set(priorCheckpoint);
+    const remaining = toSummarize.filter(s => !alreadySummarized.has(s.session_id));
+    summarizedCount = alreadySummarized.size;
 
     await updateBatchProgress(apiUrl, apiKey, batchId, {
       status: 'summarizing',
       session_count: uploadedCount,
       candidate_count: sessions.length,
       skipped_count: skipped,
-      summarized_count: 0,
+      summarized_count: summarizedCount,
     });
 
-    log(`Generating summaries for ${toSummarize.length} sessions (${sessions.length - toSummarize.length} duplicates skipped)...`);
-    for (let i = 0; i < toSummarize.length; i++) {
-      const s = toSummarize[i];
+    if (remaining.length < toSummarize.length) {
+      log(`Resuming summaries: ${alreadySummarized.size} already done, ${remaining.length} remaining`);
+    } else {
+      log(`Generating summaries for ${remaining.length} sessions (${sessions.length - toSummarize.length} duplicates skipped)...`);
+    }
+
+    for (let i = 0; i < remaining.length; i++) {
+      const s = remaining[i];
       const result = generateSummary(s);
       if (result) {
         s.title = result.title;
@@ -766,13 +840,15 @@ async function main() {
         try {
           await updateBuildSummary(apiUrl, apiKey, batchId, s);
           summarizedCount++;
+          alreadySummarized.add(s.session_id);
           if (!JSON_MODE) {
             const label = result.title.length > 50 ? result.title.slice(0, 50) + '...' : result.title;
-            log(`  [${i + 1}/${toSummarize.length}] ${label}`);
+            log(`  [${summarizedCount}/${toSummarize.length}] ${label}`);
           }
         } catch (err) {
           if (err.statusCode === 404) {
-            log(`  Summary skipped for ${s.session_id.slice(0, 8)}...: no draft row in this batch`);
+            log(`  Summary skipped for ${s.session_id.slice(0, 8)}...: build not found in batch`);
+            alreadySummarized.add(s.session_id); // don't retry 404s
           } else {
             summaryFailures++;
             try {
@@ -785,18 +861,30 @@ async function main() {
         }
       }
 
-      if (!DRY_RUN && !JSON_MODE && ((i + 1) % 5 === 0 || i + 1 === toSummarize.length)) {
-        await updateBatchProgress(apiUrl, apiKey, batchId, {
-          status: 'summarizing',
-          summarized_count: summarizedCount,
-          error_count: summaryFailures,
-        });
+      // Checkpoint every 5 summaries so crashes don't lose progress
+      if ((i + 1) % 5 === 0 || i + 1 === remaining.length) {
+        saveCheckpoint(batchId, alreadySummarized);
+        if (!DRY_RUN && !JSON_MODE) {
+          await updateBatchProgress(apiUrl, apiKey, batchId, {
+            status: 'summarizing',
+            summarized_count: summarizedCount,
+            error_count: summaryFailures,
+          });
+        }
       }
+    }
+
+    // Only clear checkpoint if all summaries succeeded — preserve resume state on partial failure
+    if (summaryFailures === 0) {
+      clearCheckpoint();
+    } else {
+      log(`  ${summaryFailures} summary failures — checkpoint preserved for resume`);
     }
   }
 
+  // Builds are auto-published on upload — mark batch as completed
   await finalizeBatchProgress(apiUrl, apiKey, batchId, {
-    status: 'ready',
+    status: 'completed',
     session_count: uploadedCount,
     candidate_count: sessions.length,
     skipped_count: skipped,
@@ -804,7 +892,10 @@ async function main() {
     error_count: summaryFailures,
     finished_at: new Date().toISOString(),
   });
-  log(`Batch ${batchId}: ${uploadedCount} sessions uploaded`);
+  log(`Batch ${batchId}: ${uploadedCount} sessions published`);
+  if (GENERATE_SUMMARIES && summarizedCount > 0) {
+    log(`  ${summarizedCount} summaries enhanced with Haiku`);
+  }
   process.stdout.write(batchId);
 }
 
