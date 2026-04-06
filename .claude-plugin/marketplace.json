@@ -5,13 +5,13 @@
     "email": "contact@promptbook.gg"
   },
   "metadata": {
-    "description": "Automatic build tracking for AI builders"
+    "description": "Opt-in analytics for Claude Code sessions"
   },
   "plugins": [
     {
       "name": "promptbook",
       "source": "./plugins/promptbook",
-      "description": "Track your Claude Code sessions automatically. See your prompts, tokens, and build time — share your builds on promptbook.gg.",
+      "description": "Opt-in analytics plugin for Claude Code. After setup consent, Promptbook sends session metrics to promptbook.gg and publishes shareable build cards.",
       "version": "1.4.0"
     }
   ]

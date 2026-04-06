@@ -9,7 +9,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { getDataDir, readStdin, appendLog, isValidSessionId } = require('./lib/io');
+const { getDataDir, readStdin, readConfig, hasTrackingConsent, appendLog, isValidSessionId } = require('./lib/io');
 const { deriveProjectName } = require('./lib/language');
 
 const DATA_DIR = getDataDir();
@@ -17,6 +17,9 @@ const DATA_DIR = getDataDir();
 function main() {
   // Skip if this session was spawned by our own summary generation
   if (process.env.PROMPTBOOK_SKIP_HOOKS === '1') return;
+
+  const config = readConfig();
+  if (!hasTrackingConsent(config)) return;
 
   const input = readStdin();
   if (!input || !input.session_id || !isValidSessionId(input.session_id)) return;

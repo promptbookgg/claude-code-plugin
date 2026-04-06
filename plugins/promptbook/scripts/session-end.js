@@ -11,7 +11,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
-const { getDataDir, readStdin, readConfig, acquireLock, releaseLock, atomicWrite, appendLog, isValidSessionId } = require('./lib/io');
+const { getDataDir, readStdin, readConfig, hasTrackingConsent, acquireLock, releaseLock, atomicWrite, appendLog, isValidSessionId } = require('./lib/io');
 const { getPrimaryLanguage } = require('./lib/language');
 const { parseTranscript, parseSubagentTokens } = require('./lib/transcript');
 
@@ -23,6 +23,9 @@ const SCRIPTS_DIR = process.env.CLAUDE_PLUGIN_ROOT
 try {
   // Skip if this session was spawned by our own summary generation
   if (process.env.PROMPTBOOK_SKIP_HOOKS === '1') process.exit(0);
+
+  const config = readConfig();
+  if (!hasTrackingConsent(config)) process.exit(0);
 
   const input = readStdin();
   if (!input || !input.session_id || !isValidSessionId(input.session_id)) process.exit(0);
@@ -132,8 +135,7 @@ try {
     }
 
     // Check if config exists for submission
-    const config = readConfig();
-    if (!config || !config.api_key || !config.api_url) {
+    if (!hasTrackingConsent(config)) {
       if (compactLogFile) try { fs.unlinkSync(compactLogFile); } catch { /* ignore */ }
       process.exit(0);
     }

@@ -1,6 +1,10 @@
 ---
 name: setup
 description: Set up Promptbook — connect your account to start tracking builds
+version: 1.4.0
+author: Promptbook
+license: MIT
+allowed-tools: Bash
 ---
 
 # Promptbook Setup
@@ -9,6 +13,7 @@ Help the user connect their Promptbook account using the device-code auth flow. 
 
 ## Privacy note
 What is sent to promptbook.gg: session ID, project name, model, timestamps, prompt count, token counts, build time, lines changed, language, file extension counts, and tool usage counts. No source code, prompt content, file contents, file paths, or working directory is ever sent. To generate a title and summary for each build, the plugin calls Claude Haiku via the user's own Claude credentials — this data goes to Anthropic (same as normal Claude Code usage), never to Promptbook.
+The plugin stays inactive until setup writes consent into `~/.promptbook/config.json`. Continuing with setup means the user consents to this data collection. After each session ends, a short background process may continue briefly to submit stats and generate the title/summary.
 
 ## Steps
 
@@ -47,7 +52,8 @@ What is sent to promptbook.gg: session ID, project name, model, timestamps, prom
    {
      "api_key": "<api_key from step 4>",
      "api_url": "https://promptbook.gg",
-     "auto_summary": true
+     "auto_summary": true,
+     "telemetry_consent": true
    }
    JSONEOF
    chmod 600 "$HOME/.promptbook/config.json"
@@ -61,23 +67,18 @@ What is sent to promptbook.gg: session ID, project name, model, timestamps, prom
 
 7. **Confirm completion.** Tell the user:
    - "You're all set! Tracking starts on your **next** Claude Code session."
+   - "By completing setup, you've opted in to Promptbook tracking for this plugin install."
    - "Here's how it works: when you start a new session, the plugin automatically tracks your prompts, tokens, build time, and lines changed. When the session ends, it creates a build on promptbook.gg with a link you can share."
+   - "After the session ends, a short background task may continue briefly to submit stats and generate your title/summary."
    - "This current session won't be tracked — start a new one to see it in action."
    - "Run `/setup` again anytime to reconnect or switch accounts."
 
 8. **Offer history backfill.** After setup is complete, ask the user: "Want me to scan your Claude Code history for past sessions? I can find builds from the last 90 days and upload them to your profile."
 
-   If they say yes, first find the backfill script. Check these paths in order:
-   - `~/.promptbook/hooks/backfill-history.js` (bash install)
-   - The plugin's own scripts directory (find it with: `find ~/.claude -path "*/promptbook/scripts/backfill-history.js" -type f 2>/dev/null | head -1`)
+   If they say yes, first find the bundled backfill script in the installed plugin:
+   - `find ~/.claude -path "*/promptbook/scripts/backfill-history.js" -type f 2>/dev/null | head -1`
 
-   If neither exists, download it:
-   ```bash
-   mkdir -p ~/.promptbook/hooks/lib
-   for f in backfill-history.js lib/io.js lib/transcript.js lib/language.js lib/summary.js; do
-     curl -sfL "https://promptbook.gg/hooks/$f" -o "$HOME/.promptbook/hooks/$f"
-   done
-   ```
+   If it does not exist, stop and tell the user the plugin install looks incomplete. Do not download code from the network.
 
    Then start it in the background:
    ```bash

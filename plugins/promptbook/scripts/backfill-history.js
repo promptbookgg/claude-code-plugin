@@ -672,6 +672,10 @@ async function main() {
       const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
       apiUrl = apiUrl || config.api_url || '';
       apiKey = config.api_key || '';
+      if (config.telemetry_consent !== true) {
+        log('Error: Promptbook consent not found in ~/.promptbook/config.json. Run the plugin setup again to continue.');
+        process.exit(1);
+      }
     }
     if (needsConfig && (!apiUrl || !apiKey)) {
       log('Error: config.json missing api_url or api_key');

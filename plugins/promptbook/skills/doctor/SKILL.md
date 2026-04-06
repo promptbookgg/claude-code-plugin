@@ -1,6 +1,10 @@
 ---
 name: doctor
 description: Diagnose Promptbook setup — check config, hooks, API key, and session tracking health
+version: 1.4.0
+author: Promptbook
+license: MIT
+allowed-tools: Bash
 ---
 
 # Promptbook Doctor
@@ -19,13 +23,13 @@ if [ -f "$HOME/.promptbook/config.json" ]; then
   # Check permissions (should be 600)
   stat -f "%Lp" "$HOME/.promptbook/config.json" 2>/dev/null || stat -c "%a" "$HOME/.promptbook/config.json" 2>/dev/null
   # Check required fields exist (without displaying values)
-  node -e "const c=JSON.parse(require('fs').readFileSync('$HOME/.promptbook/config.json','utf8'));console.log('has_api_key:',!!c.api_key);console.log('has_api_url:',!!c.api_url);console.log('auto_summary:',c.auto_summary)"
+  node -e "const c=JSON.parse(require('fs').readFileSync('$HOME/.promptbook/config.json','utf8'));console.log('has_api_key:',!!c.api_key);console.log('has_api_url:',!!c.api_url);console.log('auto_summary:',c.auto_summary);console.log('telemetry_consent:',c.telemetry_consent===true)"
 else
   echo "NO_CONFIG"
 fi
 ```
 
-If no config file found: tell the user to run `/setup` first.
+If no config file found or `telemetry_consent` is false: tell the user to run `/setup` first.
 
 ### 2. API key is valid
 Use the config file to test the API key without displaying it:
@@ -57,6 +61,7 @@ Present results as a clear diagnostic:
 Promptbook Doctor
 ─────────────────
 ✓ Config:    Found (~/.promptbook/config.json)
+✓ Consent:   Granted during setup
 ✓ API Key:   Valid and verified
 ✓ Activity:  Last session 2 hours ago
 ```

@@ -2,7 +2,7 @@
 
 Build better. See your progress. Post the proof.
 
-Track prompts, tokens, and build time automatically. Every Claude Code session becomes shareable progress on [promptbook.gg](https://promptbook.gg) — verified stats, no self-reporting.
+Promptbook is an opt-in analytics plugin for Claude Code. After setup consent, it tracks prompts, tokens, and build time, sends session metrics to [promptbook.gg](https://promptbook.gg), and turns each session into shareable progress.
 
 ## Install
 
@@ -12,6 +12,7 @@ Track prompts, tokens, and build time automatically. Every Claude Code session b
 ```
 
 Then run `/promptbook:setup` to connect your account.
+Setup includes the data disclosure and records your consent in `~/.promptbook/config.json`. Tracking starts on your next Claude Code session.
 
 ## What it tracks
 
@@ -20,6 +21,8 @@ Then run `/promptbook:setup` to connect your account.
 - Build time
 - Lines changed
 - Primary language
+- Tool usage counts
+- File extension counts
 
 No source code or prompt content is ever sent. See the Privacy section below for exactly what is sent.
 
@@ -34,7 +37,7 @@ The plugin registers four Claude Code hooks:
 | **PostToolUse** | Counts lines changed, tracks file types |
 | **SessionEnd** | Finalizes stats, submits to promptbook.gg |
 
-After each session, you'll see a link to your progress. Customize the title, summary, and screenshot on the web — then share it.
+After each session, you'll see a link to your progress. A short background process may continue briefly after Claude exits so Promptbook can submit the build and generate the title/summary. Customize the title, summary, and screenshot on the web — then share it.
 
 ## Privacy
 
@@ -43,6 +46,12 @@ After each session, you'll see a link to your progress. Customize the title, sum
 **What is never sent:** source code, prompt content, file contents, file paths, or your working directory.
 
 The plugin also generates a short title and summary by calling Claude Haiku through your own Claude credentials — this goes to Anthropic (same as any Claude Code usage), never to Promptbook.
+
+Promptbook remains inactive until setup writes your consent into the local config file.
+
+## History Backfill
+
+After setup, you can optionally scan your local Claude Code history and upload past sessions from the bundled `backfill-history.js` script shipped with this plugin. The plugin does not download executable code at runtime for backfill.
 
 You can audit everything: the hooks are right here in this repo.
 

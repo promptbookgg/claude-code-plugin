@@ -16,7 +16,7 @@
 const fs = require('fs');
 const path = require('path');
 const { execSync, execFileSync } = require('child_process');
-const { atomicWrite, appendLog, readConfig } = require('./lib/io');
+const { atomicWrite, appendLog, readConfig, hasTrackingConsent } = require('./lib/io');
 const {
   generateFallbackTitle, generateFallbackSummary,
   buildSummaryPrompt,
@@ -44,7 +44,7 @@ const API_KEY = config?.api_key || '';
 const API_URL = config?.api_url || '';
 
 // Validate required values early
-if (!SESSION_ID || !SESSION_FILE || !API_KEY || !API_URL || !DATA_DIR) {
+if (!SESSION_ID || !SESSION_FILE || !API_KEY || !API_URL || !DATA_DIR || !hasTrackingConsent(config)) {
   process.exit(0);
 }
 

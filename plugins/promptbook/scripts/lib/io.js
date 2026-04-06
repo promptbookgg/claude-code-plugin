@@ -33,7 +33,7 @@ function readStdin() {
 
 /**
  * Read config.json from ~/.promptbook/config.json.
- * Returns { api_key, api_url, auto_summary } or null.
+ * Returns { api_key, api_url, auto_summary, telemetry_consent } or null.
  */
 function readConfig() {
   try {
@@ -44,10 +44,15 @@ function readConfig() {
       api_key: config.api_key || '',
       api_url: config.api_url || '',
       auto_summary: config.auto_summary !== false,
+      telemetry_consent: config.telemetry_consent === true,
     };
   } catch {
     return null;
   }
+}
+
+function hasTrackingConsent(config) {
+  return !!(config && config.api_key && config.api_url && config.telemetry_consent === true);
 }
 
 /**
@@ -153,6 +158,7 @@ module.exports = {
   getDataDir,
   readStdin,
   readConfig,
+  hasTrackingConsent,
   atomicWrite,
   acquireLock,
   releaseLock,
